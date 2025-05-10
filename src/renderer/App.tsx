@@ -5,8 +5,6 @@ import './App.css';
 import Start from './pages/Start';
 import ConvertUI from './pages/ConvertUI';
 import { InputProvider } from './context/InputContext';
-import { loader } from '@monaco-editor/react';
-loader.config({ paths: { vs: 'monaco/vs' } });
 
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (

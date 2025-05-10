@@ -1,37 +1,55 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useMemo } from 'react';
 
-export type Format = 'JSON' | 'XML' | 'CSV';
-export const AVAILABLE_FORMATS: Format[] = ['JSON', 'XML', 'CSV'];
+export const AVAILABLE_FORMATS = ['JSON', 'XML', 'CSV'] as const;
+export type Format = typeof AVAILABLE_FORMATS[number];
 
-type InputState = { value: string; isValid: boolean };
-
-type Inputs = Record<Format, InputState>;
-
-interface InputContextValue {
-  inputs: Inputs;
-  updateInput: (format: Format, value: string, isValid: boolean) => void;
+interface InputState {
+  value: string;
+  isValid: boolean;
 }
 
-const InputContext = createContext<InputContextValue | undefined>(undefined);
+interface InputContextType {
+  inputs: Record<Format, InputState>;
+  updateInput: (format: Format, value: string, isValid: boolean) => void;
+  autoConvert: boolean;
+  setAutoConvert: (value: boolean) => void;
+}
+
+const InputContext = createContext<InputContextType | undefined>(undefined);
 
 export function InputProvider({ children }: { children: ReactNode }) {
-  const [inputs, setInputs] = useState<Inputs>({
-    JSON: { value: '', isValid: false },
-    XML: { value: '', isValid: false },
-    CSV: { value: '', isValid: false },
+  const [inputs, setInputs] = useState<Record<Format, InputState>>({
+    JSON: { value: '', isValid: true },
+    XML: { value: '', isValid: true },
+    CSV: { value: '', isValid: true },
   });
 
-  const updateInput: InputContextValue['updateInput'] = (format, value, isValid) => {
-    setInputs((prev) => ({ ...prev, [format]: { value, isValid } }));
+  const [autoConvert, setAutoConvert] = useState(false);
+
+  const updateInput = (format: Format, value: string, isValid: boolean) => {
+    setInputs((prev) => ({
+      ...prev,
+      [format]: { value, isValid },
+    }));
   };
 
-  return <InputContext.Provider value={{ inputs, updateInput }}>{children}</InputContext.Provider>;
+  const value = useMemo(
+    () => ({
+      inputs,
+      updateInput,
+      autoConvert,
+      setAutoConvert,
+    }),
+    [inputs, autoConvert]
+  );
+
+  return <InputContext.Provider value={value}>{children}</InputContext.Provider>;
 }
 
 export function useInputs() {
-  const ctx = useContext(InputContext);
-  if (!ctx) {
-    throw new Error('useInputs muss innerhalb von InputProvider verwendet werden');
+  const context = useContext(InputContext);
+  if (!context) {
+    throw new Error('useInputs must be used within an InputProvider');
   }
-  return ctx;
+  return context;
 }

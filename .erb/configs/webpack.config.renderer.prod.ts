@@ -119,7 +119,7 @@ const configuration: webpack.Configuration = {
     }),
 
     new MonacoWebpackPlugin({
-      languages: ['json', 'xml', 'csv']
+      languages: ['json', 'xml']
     }),
 
     new MiniCssExtractPlugin({

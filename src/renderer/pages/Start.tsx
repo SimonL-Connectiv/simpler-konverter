@@ -22,16 +22,30 @@
 
 
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AVAILABLE_FORMATS, Format } from '../context/InputContext';
 import { Select, Button, Tooltip, ToggleSwitch } from 'flowbite-react';
 import { ArrowRightLeft, Github, Trash2 } from 'lucide-react';
 
 export default function Start() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [selected, setSelected] = useState<Array<Format | ''>>(['', '', '']);
   const [auto, setAuto] = useState(false);
+
+  useEffect(() => {
+    const state = location.state as { formats: Format[] } | null;
+    if (state?.formats) {
+      const newSelected = [...selected];
+      state.formats.forEach((format, index) => {
+        if (index < 3) {
+          newSelected[index] = format;
+        }
+      });
+      setSelected(newSelected);
+    }
+  }, [location.state]);
 
   const chosen = selected.filter((f): f is Format => f !== '');
   const ready2 = chosen.length >= 2;

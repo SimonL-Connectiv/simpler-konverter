@@ -1,134 +1,192 @@
-import { useState, useMemo, useEffect } from 'react';
-import Editor, { loader } from '@monaco-editor/react';
-import { Maximize2, Table as TableIcon } from 'lucide-react';
-import { useInputs, Format } from '../context/InputContext';
-import CopyButton from './CopyButton';
-import EnlargedInputField from './EnlargedInputField';
-import CSVTable from './CSVTable';
-
-// Konfiguriere den Monaco Editor Loader
-loader.config({
-  paths: {
-    vs: 'monaco/vs'
-  }
-});
+import { useState, useMemo } from 'react'
+import MonacoEditor from 'react-monaco-editor'
+import { Maximize2, Table as TableIcon, Plus, Trash2 } from 'lucide-react'
+import { useInputs, Format, AVAILABLE_FORMATS } from '../context/InputContext'
+import CopyButton from './CopyButton'
+import EnlargedInputField from './EnlargedInputField'
+import CSVTable from './CSVTable'
+import { Tooltip, Select } from 'flowbite-react'
 
 interface Props {
-  format: Format;
-  onChange?: (val: string, isValid: boolean) => void;
+  format: Format
+  onChange?: (val: string, isValid: boolean) => void
+  availableFormats?: Format[]
+  onFormatChange?: (newFormat: Format | null) => void
+  showAddButton?: boolean
+  onAddFormat?: () => void
+  hideActions?: boolean
+  disableSelect?: boolean
 }
 
-export default function InputField({ format, onChange }: Props) {
-  const { inputs, updateInput } = useInputs();
-  const [showEnlarged, setShowEnlarged] = useState(false);
-  const [showTable, setShowTable] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
-
-  const value = inputs[format].value;
+export default function InputField({
+  format,
+  onChange,
+  availableFormats,
+  onFormatChange,
+  showAddButton,
+  onAddFormat,
+  hideActions,
+  disableSelect
+}: Props) {
+  const { inputs, updateInput } = useInputs()
+  const [isEnlarged, setIsEnlarged] = useState(false)
+  const [showTable, setShowTable] = useState(false)
+  const { value, isValid } = inputs[format]
 
   const validate = useMemo(() => {
-    return (content: string): boolean => {
-      if (!content.trim()) return true;
+    return (txt: string): boolean => {
+      if (!txt.trim()) return true
       try {
-        if (format === 'JSON') {
-          JSON.parse(content);
-        } else if (format === 'XML') {
-          const doc = new DOMParser().parseFromString(content, 'application/xml');
-          if (doc.getElementsByTagName('parsererror').length) throw new Error('invalid');
+        if (format === 'JSON') JSON.parse(txt)
+        else if (format === 'XML') {
+          const d = new DOMParser().parseFromString(txt, 'application/xml')
+          if (d.getElementsByTagName('parsererror').length) throw 0
         } else if (format === 'CSV') {
-          const rows = content.trim().split(/\r?\n/);
-          const cols = rows[0].split(',').length;
-          if (!rows.every((r) => r.split(',').length === cols)) throw new Error('invalid');
+          const rows = txt.trim().split(/\r?\n/)
+          const cols = rows[0].split(',').length
+          if (!rows.every(r => r.split(',').length === cols)) throw 0
         }
-        return true;
+        return true
       } catch {
-        return false;
-      }
-    };
-  }, [format]);
-
-  const isValid = validate(value);
-
-  useEffect(() => {
-    onChange?.(value, isValid);
-  }, [value, isValid, onChange]);
-
-  useEffect(() => {
-    if (format === 'CSV' && (window as any).monaco) {
-      const monaco = (window as any).monaco as typeof import('monaco-editor');
-      if (!monaco.languages.getEncodedLanguageId('csv')) {
-        monaco.languages.register({ id: 'csv' });
-        monaco.languages.setMonarchTokensProvider('csv', {
-          tokenizer: { root: [[/,/, 'delimiter'], [/[^,\n]+/, 'string'], [/\n/, 'delimiter']] },
-        });
+        return false
       }
     }
-  }, [format]);
+  }, [format])
 
-  const handleEditorDidMount = () => {
-    setEditorReady(true);
-  };
+  const handleChange = (v: string) => {
+    const ok = validate(v)
+    updateInput(format, v, ok)
+    onChange?.(v, ok)
+  }
 
-  const handleEditorChange = (v: string | undefined) => {
-    const content = v ?? '';
-    const ok = validate(content);
-    updateInput(format, content, ok);
-  };
+  const handleValidate = (m: monaco.editor.IMarker[]) => {
+    const ok = m.length === 0 && validate(value)
+    if (ok !== isValid) {
+      updateInput(format, value, ok)
+      onChange?.(value, ok)
+    }
+  }
+
+  const af = availableFormats ?? []
+  const showSelect = !disableSelect
+  const opts = af.filter(f => f !== format)
+
+  const hideHeader = hideActions && disableSelect
 
   return (
-    <div className="relative group w-full max-w-sm border-2 rounded-xl" data-valid={isValid}>
-      <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition">
-        {format === 'CSV' && (
-          <button
-            type="button"
-            onClick={() => setShowTable(true)}
-            className="p-1 rounded hover:bg-gray-700 active:scale-95"
-            title="Tabelle anzeigen"
-          >
-            <TableIcon size={18} />
-          </button>
+    <>
+      <div className="flex flex-col h-full">
+        {!hideHeader && (
+          <div className="flex items-center justify-between mb-2">
+            {showSelect ? (
+              <div className="flex items-center gap-2">
+                <Select
+                  sizing="sm"
+                  value={format}
+                  onChange={e =>
+                    onFormatChange?.(e.target.value === '' ? null : (e.target.value as Format))
+                  }
+                  className="w-40 text-xs [&>select]:py-2 [&>select]:bg-gray-800 [&>select]:border-gray-600"
+                  colors="gray"
+                >
+                  <option value={format} disabled hidden>
+                    {format}
+                  </option>
+                  <option value="">
+                    <Trash2 size={14} className="inline mr-1" />
+                    Auswahl löschen
+                  </option>
+                  {opts.map(f => (
+                    <option key={f}>{f}</option>
+                  ))}
+                </Select>
+                {showAddButton && (
+                  <Tooltip content="Format hinzufügen">
+                    <button
+                      type="button"
+                      onClick={onAddFormat}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            ) : (
+              <h3 className="text-lg font-semibold">{format}</h3>
+            )}
+            {!hideActions && (
+              <div className="flex items-center gap-2">
+                {format === 'CSV' && (
+                  <Tooltip content="Tabelle anzeigen">
+                    <button
+                      type="button"
+                      onClick={() => setShowTable(true)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                    >
+                      <TableIcon size={18} />
+                    </button>
+                  </Tooltip>
+                )}
+                <CopyButton value={value} />
+                <Tooltip content="Vergrößern">
+                  <button
+                    type="button"
+                    onClick={() => setIsEnlarged(true)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                  >
+                    <Maximize2 size={18} />
+                  </button>
+                </Tooltip>
+              </div>
+            )}
+          </div>
         )}
-        <CopyButton value={value} />
-        <button
-          type="button"
-          onClick={() => setShowEnlarged(true)}
-          className="p-1 rounded hover:bg-gray-700 active:scale-95"
-          title="Vergrößern"
+
+        <div
+          className={`relative flex-1 rounded-xl overflow-hidden ${
+            isValid ? 'border-2 border-gray-600' : 'border-red-500 border-4'
+          }`}
         >
-          <Maximize2 size={18} />
-        </button>
+          <MonacoEditor
+            height="100%"
+            language={format === 'CSV' ? 'csv' : format.toLowerCase()}
+            theme="vs-dark"
+            value={value}
+            onChange={handleChange}
+            onValidate={handleValidate}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              wordWrap: 'on',
+              folding: true,
+              lineDecorationsWidth: 0,
+              lineNumbersMinChars: 3,
+              glyphMargin: false,
+              contextmenu: true,
+              scrollbar: {
+                vertical: 'visible',
+                horizontal: 'visible',
+                useShadows: false,
+                verticalScrollbarSize: 10,
+                horizontalScrollbarSize: 10
+              }
+            }}
+          />
+        </div>
       </div>
-      <Editor
-        height="300px"
-        defaultLanguage={format === 'CSV' ? 'csv' : format.toLowerCase()}
-        value={value}
-        theme="vs-dark"
-        onMount={handleEditorDidMount}
-        onChange={handleEditorChange}
-        options={{
-          minimap: { enabled: false },
-          wordWrap: 'on',
-          fontSize: 14,
-          scrollBeyondLastLine: false,
-          automaticLayout: true
-        }}
-        loading={<div className="h-[300px] flex items-center justify-center">Editor wird geladen...</div>}
-      />
+
       {!isValid && (
-        <div className="absolute inset-0 border-2 border-red-500 pointer-events-none rounded-xl" />
+        <p className="text-gray-300 text-xs font-mono italic w-full flex items-center justify-center">
+          Inhalt nicht wohlgeformt
+        </p>
       )}
-      {showEnlarged && (
-        <EnlargedInputField
-          format={format}
-          onClose={() => setShowEnlarged(false)}
-        />
-      )}
-      {showTable && format === 'CSV' && (
-        <CSVTable
-          csv={value}
-          onClose={() => setShowTable(false)}
-        />
-      )}
-    </div>
-  );
+
+      {isEnlarged && <EnlargedInputField format={format} onClose={() => setIsEnlarged(false)} />}
+      {showTable && format === 'CSV' && <CSVTable csv={value} onClose={() => setShowTable(false)} />}
+    </>
+  )
 }

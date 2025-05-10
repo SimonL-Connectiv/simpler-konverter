@@ -3,34 +3,31 @@
 * */
 
 import { useState } from 'react';
-import { Clipboard, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
+import { Tooltip } from 'flowbite-react';
 
 interface Props {
   value: string;
-  tooltip?: string;
 }
 
-export default function CopyButton({ value, tooltip = 'Kopieren' }: Props) {
+export default function CopyButton({ value }: Props) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      /* ignore */
-    }
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-500 transition-all"
-      title={tooltip}
-    >
-      {copied ? <Check className="w-5 h-5" /> : <Clipboard className="w-5 h-5" />}
-    </button>
+    <Tooltip content={copied ? 'Kopiert!' : 'Kopieren'}>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+      >
+        {copied ? <Check size={18} /> : <Copy size={18} />}
+      </button>
+    </Tooltip>
   );
 }
