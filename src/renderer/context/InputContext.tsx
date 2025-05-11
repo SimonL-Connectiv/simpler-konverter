@@ -1,55 +1,68 @@
-import { createContext, useContext, useState, ReactNode, useMemo } from 'react';
+import {
+    createContext,
+    useContext,
+    useState,
+    useMemo,
+    ReactNode,
+    Dispatch,
+    SetStateAction,
+} from 'react';
 
 export const AVAILABLE_FORMATS = ['JSON', 'XML', 'CSV'] as const;
-export type Format = typeof AVAILABLE_FORMATS[number];
+export type Format = (typeof AVAILABLE_FORMATS)[number];
 
 interface InputState {
-  value: string;
-  isValid: boolean;
+    value: string;
+    isValid: boolean;
 }
 
-interface InputContextType {
-  inputs: Record<Format, InputState>;
-  updateInput: (format: Format, value: string, isValid: boolean) => void;
-  autoConvert: boolean;
-  setAutoConvert: (value: boolean) => void;
+interface Ctx {
+    inputs: Record<Format, InputState>;
+    updateInput: (f: Format, v: string, ok: boolean) => void;
+    lastEdited: Format | null;
+    autoConvert: boolean;
+    setAutoConvert: (b: boolean) => void;
+    selectedFormats: Format[];
+    setSelectedFormats: Dispatch<SetStateAction<Format[]>>;
 }
 
-const InputContext = createContext<InputContextType | undefined>(undefined);
+const InputContext = createContext<Ctx | undefined>(undefined);
 
 export function InputProvider({ children }: { children: ReactNode }) {
-  const [inputs, setInputs] = useState<Record<Format, InputState>>({
-    JSON: { value: '', isValid: true },
-    XML: { value: '', isValid: true },
-    CSV: { value: '', isValid: true },
-  });
+    const [inputs, setInputs] = useState<Record<Format, InputState>>({
+        JSON: { value: '', isValid: true },
+        XML: { value: '', isValid: true },
+        CSV: { value: '', isValid: true },
+    });
+    const [lastEdited, setLast] = useState<Format | null>(null);
+    const [autoConvert, setAutoConvert] = useState(false);
+    const [selectedFormats, setSelectedFormats] = useState<Format[]>([]);
 
-  const [autoConvert, setAutoConvert] = useState(false);
+    const updateInput = (f: Format, v: string, ok: boolean) => {
+        setInputs((p) => ({ ...p, [f]: { value: v, isValid: ok } }));
+        setLast(f);
+    };
 
-  const updateInput = (format: Format, value: string, isValid: boolean) => {
-    setInputs((prev) => ({
-      ...prev,
-      [format]: { value, isValid },
-    }));
-  };
+    const value = useMemo(
+        () => ({
+            inputs,
+            updateInput,
+            lastEdited,
+            autoConvert,
+            setAutoConvert,
+            selectedFormats,
+            setSelectedFormats,
+        }),
+        [inputs, lastEdited, autoConvert, selectedFormats],
+    );
 
-  const value = useMemo(
-    () => ({
-      inputs,
-      updateInput,
-      autoConvert,
-      setAutoConvert,
-    }),
-    [inputs, autoConvert]
-  );
-
-  return <InputContext.Provider value={value}>{children}</InputContext.Provider>;
+    return (
+        <InputContext.Provider value={value}>{children}</InputContext.Provider>
+    );
 }
 
 export function useInputs() {
-  const context = useContext(InputContext);
-  if (!context) {
-    throw new Error('useInputs must be used within an InputProvider');
-  }
-  return context;
+    const c = useContext(InputContext);
+    if (!c) throw new Error('useInputs must be used within InputProvider');
+    return c;
 }
