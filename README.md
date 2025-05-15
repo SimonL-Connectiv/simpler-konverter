@@ -31,6 +31,3 @@ Bei dem Projekt handelt es sich um eine Electron-basierende React-Anwendung, die
 
 Dieses Projekt steht unter der MIT-Lizenz - siehe die [LICENSE](LICENSE) Datei für Details.
 
-
-**Electron Boilerplate Lizenz**:
-MIT © [Electron React Boilerplate](https://github.com/electron-react-boilerplate)
