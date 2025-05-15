@@ -2,13 +2,13 @@
 
 Ein einfacher Konverter für verschiedene Datenformate.
 
-## Unterstützte Formate
+### Unterstützte Formate
 Aktuell werden folgende Formate unterstützt:
 - JSON
 - XML
 - CSV
 
-## Installation
+### Installation
 
 ```bash
 # Repository klonen
@@ -23,11 +23,11 @@ npm run start
 
 ```
 
-## Technologie
+### Technologie
 
 Bei dem Projekt handelt es sich um eine Electron-basierende React-Anwendung, die auf dem [Electron React Boilerplate](https://github.com/electron-react-boilerplate) basiert.
 
-## Lizenz
+### Lizenz
 
 Dieses Projekt steht unter der MIT-Lizenz - siehe die [LICENSE](LICENSE) Datei für Details.
 
