@@ -6,7 +6,7 @@ Aktuell werden folgende Formate unterstützt:
 - CSV
 
 Bei dem Projekt handelt es sich um eine Elektron basierende React Anwendung, dementsprechend wurde das Elektron Boilerplate verwendet.
-
+Genau wie das Elektron Boilerplate darf dieses Projekt und seine Inhalte unter der MIT Lizenz frei verwendet werden.
 
 
 ## Elektron Boilerplate License
