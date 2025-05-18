@@ -1,394 +1,427 @@
-import { useEffect, useCallback, useRef, useState } from 'react';
-import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
-import { ArrowRightLeft, Plus, Grip } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Tooltip } from 'flowbite-react';
-import useConvert from '../hooks/ConvertHook';
-import { useInputs, AVAILABLE_FORMATS, Format } from '../context/InputContext';
-import InputField from '../components/InputField';
-import ConvertButton from '../components/ConvertButton';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import MonacoEditor from 'react-monaco-editor';
+import type * as monaco from 'monaco-editor';
+import { Maximize2, Table as TableIcon, Plus, Trash2, X, RotateCcw, RotateCw } from 'lucide-react';
+import { Tooltip, Select } from 'flowbite-react';
+import { useInputs, Format } from '../context/InputContext';
+import CopyButton from './CopyButton';
+import EnlargedInputField from './EnlargedInputField';
+import CSVTable from './CSVTable';
 
-export default function ConvertUI() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const {
-        inputs,
-        updateInput,
-        setAutoConvert,
-        autoConvert,
-        lastEdited,
-        selectedFormats,
-        setSelectedFormats,
-    } = useInputs();
+interface Props {
+    format: Format;
+    onChange?: (val: string, isValid: boolean) => void;
+    availableFormats?: Format[];
+    onFormatChange?: (newFormat: Format | null) => void;
+    showAddButton?: boolean;
+    onAddFormat?: () => void;
+    hideActions?: boolean;
+    disableSelect?: boolean;
+    allowRemove?: boolean;
+    onEditorReady?: (editor: monaco.editor.IStandaloneCodeEditor | null) => void;
+}
 
-    const convert = useConvert();
-    const isAutoConverting = useRef(false);
-    const conversionTimeoutRef = useRef<number | null>(null);
-    const [originalOverflowY, setOriginalOverflowY] = useState('');
-    const dragControls = useDragControls();
+export default function InputField({
+                                       format,
+                                       onChange,
+                                       availableFormats,
+                                       onFormatChange,
+                                       showAddButton,
+                                       onAddFormat,
+                                       hideActions,
+                                       disableSelect,
+                                       allowRemove = true,
+                                       onEditorReady,
+                                   }: Props) {
+    const { inputs, updateInput } = useInputs();
+    const [isEnlarged, setIsEnlarged] = useState(false);
+    const [showTable, setShowTable] = useState(false);
+    const { value, isValid } = inputs[format];
 
-    useEffect(() => {
-        const s = location.state as { formats: Format[]; auto: boolean } | null;
-        if (
-            s?.formats &&
-            Array.isArray(s.formats) &&
-            s.formats.every((f) => AVAILABLE_FORMATS.includes(f)) &&
-            s.formats.length > 0
-        ) {
-            setSelectedFormats(s.formats);
-            if (typeof s.auto === 'boolean') {
-                setAutoConvert(s.auto);
-            }
-        } else {
-            navigate('/');
-        }
-    }, [location.state, navigate, setAutoConvert, setSelectedFormats]);
+    const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+    const monacoInstanceRef = useRef<typeof monaco | null>(null);
+    const validationTimeoutRef = useRef<number | null>(null);
+    const modelContentListenerRef = useRef<monaco.IDisposable | null>(null);
+    const monacoMarkersListenerRef = useRef<monaco.IDisposable | null>(null);
 
-    const scheduleAutoConversion = useCallback(
-        (sourceFormat: Format) => {
-            if (conversionTimeoutRef.current) {
-                clearTimeout(conversionTimeoutRef.current);
-            }
-            conversionTimeoutRef.current = window.setTimeout(() => {
-                if (
-                    !autoConvert ||
-                    !inputs[sourceFormat]?.isValid ||
-                    isAutoConverting.current
-                ) {
-                    return;
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+
+    const validate = useMemo(() => {
+        return (txt: string): boolean => {
+            if (!txt.trim()) return true;
+            try {
+                if (format === 'JSON') JSON.parse(txt);
+                else if (format === 'XML') {
+                    const d = new DOMParser().parseFromString(
+                        txt,
+                        'application/xml',
+                    );
+                    if (d.getElementsByTagName('parsererror').length) throw 0;
+                } else if (format === 'CSV') {
+                    const rows = txt.trim().split(/\r?\n/);
+                    if (rows.length === 1 && rows[0].trim() === '') return true;
+                    if (rows.length === 0) return true;
+
+                    const firstRowHasComma = rows[0].includes(',');
+                    if (firstRowHasComma) {
+                        const firstRowCols = rows[0].split(',').length;
+                        if (
+                            !rows.every(
+                                (r) => r.split(',').length === firstRowCols,
+                            )
+                        )
+                            throw 0;
+                    } else if (rows.some((r) => r.includes(','))) throw 0;
                 }
-                isAutoConverting.current = true;
-                selectedFormats.forEach((targetFormat) => {
-                    if (targetFormat === sourceFormat) return;
-                    try {
-                        const output = convert(sourceFormat, targetFormat);
-                        if (inputs[targetFormat].value !== output) {
-                            updateInput(targetFormat, output, true, true);
-                        }
-                    } catch (error) {
-                        console.error(
-                            `Error converting from ${sourceFormat} to ${targetFormat}:`,
-                            error,
-                        );
-                        updateInput(
-                            targetFormat,
-                            'Konvertierungsfehler',
-                            false,
-                            true,
-                        );
-                    }
-                });
-                isAutoConverting.current = false;
-            }, 300);
-        },
-        [autoConvert, inputs, selectedFormats, convert, updateInput],
-    );
+                return true;
+            } catch {
+                return false;
+            }
+        };
+    }, [format]);
 
-    const handleInputChange = (
-        format: Format,
-        value: string,
-        isValid: boolean,
-    ) => {
-        updateInput(format, value, isValid);
-        if (autoConvert && isValid) {
-            scheduleAutoConversion(format);
+    const debouncedValidateAndUpdate = (v: string) => {
+        if (validationTimeoutRef.current) {
+            clearTimeout(validationTimeoutRef.current);
         }
+        validationTimeoutRef.current = window.setTimeout(() => {
+            const currentIsValid = validate(v);
+            if (
+                v !== inputs[format].value ||
+                currentIsValid !== inputs[format].isValid
+            ) {
+                updateInput(format, v, currentIsValid);
+                onChange?.(v, currentIsValid);
+            }
+        }, 250);
+    };
+
+    const handleChange = (v: string) => {
+        debouncedValidateAndUpdate(v);
+    };
+
+    const updateEditorStates = useCallback((editor: monaco.editor.IStandaloneCodeEditor | null) => {
+        if (modelContentListenerRef.current) {
+            modelContentListenerRef.current.dispose();
+            modelContentListenerRef.current = null;
+        }
+
+        if (editor && editor.getModel()) {
+            const model = editor.getModel()!;
+            const updateUndoRedo = () => {
+                setCanUndo((model as any).canUndo());
+                setCanRedo((model as any).canRedo());
+            };
+            updateUndoRedo();
+            modelContentListenerRef.current = model.onDidChangeContent(updateUndoRedo);
+        } else {
+            setCanUndo(false);
+            setCanRedo(false);
+        }
+    }, []);
+
+
+    const handleEditorDidMount = (
+        editor: monaco.editor.IStandaloneCodeEditor,
+        instance: typeof monaco,
+    ) => {
+        editorRef.current = editor;
+        monacoInstanceRef.current = instance;
+        onEditorReady?.(editor);
+        updateEditorStates(editor);
+
+        const model = editor.getModel();
+        if (!model) return;
+
+        const markerListener = (changedUris: readonly monaco.Uri[]) => {
+            if (!monacoInstanceRef.current || !editorRef.current) return;
+            if (
+                changedUris.some(
+                    (uri) => uri.toString() === model.uri.toString(),
+                )
+            ) {
+                const currentEditorValue = editorRef.current.getValue();
+                const monacoMarkers =
+                    monacoInstanceRef.current.editor.getModelMarkers({
+                        resource: model.uri,
+                    });
+                const customValidationOk = validate(currentEditorValue);
+                const overallOk =
+                    monacoMarkers.length === 0 && customValidationOk;
+
+                if (overallOk !== inputs[format].isValid) {
+                    if (inputs[format].isValid !== overallOk) {
+                        updateInput(format, currentEditorValue, overallOk);
+                        onChange?.(currentEditorValue, overallOk);
+                    }
+                }
+            }
+        };
+        if (monacoMarkersListenerRef.current) {
+            monacoMarkersListenerRef.current.dispose();
+        }
+        monacoMarkersListenerRef.current = instance.editor.onDidChangeMarkers(markerListener);
+
+        editor.onDidDispose(() => {
+            if (monacoMarkersListenerRef.current) {
+                monacoMarkersListenerRef.current.dispose();
+                monacoMarkersListenerRef.current = null;
+            }
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+            }
+            updateEditorStates(null);
+            onEditorReady?.(null);
+        });
     };
 
     useEffect(() => {
+        const editor = editorRef.current;
+        if (editor && editor.getValue() !== value) {
+            editor.setValue(value);
+        }
+    }, [value]);
+
+    useEffect(() => {
         return () => {
-            if (conversionTimeoutRef.current) {
-                clearTimeout(conversionTimeoutRef.current);
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+            }
+            if (modelContentListenerRef.current) {
+                modelContentListenerRef.current.dispose();
+            }
+            if (monacoMarkersListenerRef.current) {
+                monacoMarkersListenerRef.current.dispose();
             }
         };
     }, []);
 
-    useEffect(() => {
-        if (autoConvert && lastEdited && inputs[lastEdited]?.isValid) {
-            scheduleAutoConversion(lastEdited);
-        }
-    }, [
-        autoConvert,
-        lastEdited,
-        inputs,
-        scheduleAutoConversion,
-    ]);
-
-    const handleFormatChange = (i: number, nf: Format | null) => {
-        if (nf === null) {
-            if (selectedFormats.length > 1) {
-                setSelectedFormats((prevSelectedFormats) =>
-                    prevSelectedFormats.filter((_, idx) => idx !== i),
-                );
+    const handleClearContent = () => {
+        const editor = editorRef.current;
+        if (editor) {
+            const model = editor.getModel();
+            if (model) {
+                const fullRange = model.getFullModelRange();
+                editor.executeEdits('clear-content', [{ range: fullRange, text: '' }]);
             }
-        } else {
-            setSelectedFormats((prevSelectedFormats: Format[]) => {
-                const newSelectedFormats = [...prevSelectedFormats];
-                if (
-                    nf &&
-                    AVAILABLE_FORMATS.includes(nf) &&
-                    !newSelectedFormats.includes(nf)
-                ) {
-                    newSelectedFormats[i] = nf;
-                } else if (
-                    nf &&
-                    AVAILABLE_FORMATS.includes(nf) &&
-                    newSelectedFormats.includes(nf)
-                ) {
-                    const currentFormatAtIndex = newSelectedFormats[i];
-                    const newFormatOldIndex = newSelectedFormats.indexOf(nf);
-                    if (newFormatOldIndex !== -1 && i !== newFormatOldIndex) {
-                        newSelectedFormats[i] = nf;
-                        newSelectedFormats[newFormatOldIndex] =
-                            currentFormatAtIndex;
-                    }
-                }
-                return newSelectedFormats;
-            });
         }
     };
 
-    const handleAddFormatLeft = () => {
-        const free = AVAILABLE_FORMATS.filter(
-            (f) => !selectedFormats.includes(f),
-        );
-        if (free.length) setSelectedFormats((prev) => [free[0], ...prev]);
-    };
-
-    const handleAddFormatRight = () => {
-        const free = AVAILABLE_FORMATS.filter(
-            (f) => !selectedFormats.includes(f),
-        );
-        if (free.length) setSelectedFormats((prev) => [...prev, free[0]]);
-    };
-
-    const handleConvertManual = (from: Format, to: Format) => {
-        if (!inputs[from].isValid) return;
-        try {
-            const output = convert(from, to);
-            updateInput(to, output, true);
-        } catch (error) {
-            console.error(`Error converting from ${from} to ${to}:`, error);
-            updateInput(to, 'Konvertierungsfehler', false);
+    const handleUndo = () => {
+        if (editorRef.current) {
+            editorRef.current.trigger('keyboard', 'undo', null);
         }
     };
 
-    const canAddMoreFormats = selectedFormats.length < AVAILABLE_FORMATS.length;
-
-    const handleReorder = (newOrder: Format[]) => {
-        setSelectedFormats(newOrder);
+    const handleRedo = () => {
+        if (editorRef.current) {
+            editorRef.current.trigger('keyboard', 'redo', null);
+        }
     };
 
-    const handleDragStart = () => {
-        setOriginalOverflowY(document.body.style.overflowY);
-        document.body.style.overflowY = 'hidden';
-    };
+    const af = availableFormats ?? [];
+    const showSelect = !disableSelect;
+    const opts = af.filter((f) => f !== format);
 
-    const handleDragEnd = () => {
-        document.body.style.overflowY = originalOverflowY;
-    };
+    const hideHeader = hideActions && disableSelect;
+
+    const isCsvDataEmpty = format === 'CSV' && !value.trim();
+    const isCsvInvalid = format === 'CSV' && !isValid;
+    const showTableButtonDisabled = isCsvDataEmpty || isCsvInvalid;
+
+    let csvTableTooltip = 'Tabelle anzeigen';
+    if (format === 'CSV') {
+        if (isCsvDataEmpty) {
+            csvTableTooltip = 'Kein Inhalt zum Anzeigen in der Tabelle';
+        } else if (isCsvInvalid) {
+            csvTableTooltip = 'CSV-Inhalt ist nicht gültig';
+        }
+    }
+
 
     return (
-        <div className="min-w-[1000px] flex flex-col p-4">
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full"
-            >
-                <div className="flex items-center gap-4 mb-8 mt-[4%]">
-                    <Tooltip content="Zurück zur Startseite">
-                        <button
-                            type="button"
-                            onClick={() =>
-                                navigate('/', {
-                                    state: {
-                                        formats: selectedFormats,
-                                        auto: autoConvert,
-                                    },
-                                })
-                            }
-                            className="hover:opacity-80 active:scale-95 transition-all"
-                        >
-                            <h1 className="text-5xl font-extrabold tracking-wide text-white flex items-center gap-3">
-                                <ArrowRightLeft size={46} strokeWidth={3} />
-                                Simpler Konverter
-                            </h1>
-                        </button>
-                    </Tooltip>
-                </div>
-
-                <div className="flex items-center gap-4 mb-8">
-                    <span className="text-sm">Automatisch konvertieren</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={autoConvert}
-                            onChange={(e) => setAutoConvert(e.target.checked)}
-                        />
-                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
-                    </label>
-                </div>
-
-                <div className="flex items-center justify-center gap-4 min-w-[90vw] overflow-x-auto">
-                    {canAddMoreFormats && (
-                        <motion.div
-                            layout="position"
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="shrink-0"
-                        >
-                            <Tooltip content="Format links hinzufügen">
-                                <button
-                                    type="button"
-                                    onClick={handleAddFormatLeft}
-                                    className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+        <>
+            <div className="flex flex-col h-full">
+                {!hideHeader && (
+                    <div className="flex items-center justify-between mb-2">
+                        {showSelect ? (
+                            <div className="flex items-center gap-2">
+                                <Select
+                                    sizing="sm"
+                                    value={format}
+                                    onChange={(
+                                        e: React.ChangeEvent<HTMLSelectElement>,
+                                    ) =>
+                                        onFormatChange?.(
+                                            e.target.value === ''
+                                                ? null
+                                                : (e.target.value as Format),
+                                        )
+                                    }
+                                    className="w-32 text-xs [&>select]:py-2 [&>select]:bg-gray-800 [&>select]:border-gray-600"
+                                    colors="gray"
                                 >
-                                    <Plus size={24} />
-                                </button>
-                            </Tooltip>
-                        </motion.div>
-                    )}
-
-                    <Reorder.Group
-                        axis="x"
-                        values={selectedFormats}
-                        onReorder={handleReorder}
-                        className="flex items-center gap-4 py-2"
-                    >
-                        {selectedFormats.map((f, idx) => (
-                            <Reorder.Item
-                                key={f}
-                                value={f}
-                                className="flex items-center gap-4 shrink-0"
-                                onDragStart={handleDragStart}
-                                onDragEnd={handleDragEnd}
-                                whileDrag={{ zIndex: 50 }}
-                                dragListener={false}
-                                dragControls={dragControls}
-                                dragConstraints={{
-                                    top: 0,
-                                    bottom: 0,
-                                }}
-                                dragElastic={0.1}
-                                layoutId={`format-${f}`}
-                                layout
-                                transition={{ duration: 0.3, type: "spring" }}
-                            >
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.8 }}
-                                    transition={{ duration: 0.3, type: "spring" }}
-                                    className="w-[400px] h-[530px] relative rounded-xl"
-                                >
-                                    <div
-                                        className="absolute top-9 -left-9 transform-translate-x-1/2 z-20"
-                                        onPointerDown={(event) => dragControls.start(event)}
-                                    >
-                                        <div className="active:bg-gray-800 hover:bg-gray-800/50 rounded-lg p-2 cursor-grab active:cursor-grabbing transition-colors">
-                                            <Grip size={20} className="opacity-70 hover:opacity-100" />
-                                        </div>
-                                    </div>
-                                    <InputField
-                                        format={f}
-                                        onChange={(v:any, ok:any) =>
-                                            handleInputChange(f, v, ok)
-                                        }
-                                        availableFormats={AVAILABLE_FORMATS.filter(
-                                            (fmt) =>
-                                                !selectedFormats.includes(fmt) ||
-                                                fmt === f,
-                                        )}
-                                        onFormatChange={(nf:any) =>
-                                            handleFormatChange(idx, nf)
-                                        }
-                                        showAddButton={false}
-                                        allowRemove={selectedFormats.length > 1}
-                                    />
-                                </motion.div>
-                                <AnimatePresence>
-                                    {!autoConvert &&
-                                        idx < selectedFormats.length - 1 && (
-                                            <motion.div
-                                                layout="position"
-                                                initial={{ width: 0, opacity: 0 }}
-                                                animate={{ width: 40, opacity: 1 }}
-                                                exit={{ width: 0, opacity: 0 }}
-                                                transition={{ duration: 0.3 }}
-                                                className="flex flex-col gap-2 overflow-hidden shrink-0"
+                                    <option value={format} disabled hidden>
+                                        {format}
+                                    </option>
+                                    {opts.map((f) => (
+                                        <option key={f}>{f}</option>
+                                    ))}
+                                </Select>
+                                {showAddButton && (
+                                    <Tooltip content="Format hinzufügen">
+                                        <button
+                                            type="button"
+                                            onClick={onAddFormat}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                                        >
+                                            <Plus size={18} />
+                                        </button>
+                                    </Tooltip>
+                                )}
+                            </div>
+                        ) : (
+                            <h3 className="text-lg font-semibold">{format}</h3>
+                        )}
+                        {!hideActions && (
+                            <div className="flex items-center gap-2">
+                                <Tooltip content="Rückgängig (Strg+Z)">
+                                    <span>
+                                        <button
+                                            type="button"
+                                            onClick={handleUndo}
+                                            disabled={!canUndo}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <RotateCcw size={18} />
+                                        </button>
+                                    </span>
+                                </Tooltip>
+                                <Tooltip content="Wiederherstellen (Strg+Y)">
+                                    <span>
+                                        <button
+                                            type="button"
+                                            onClick={handleRedo}
+                                            disabled={!canRedo}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <RotateCw size={18} />
+                                        </button>
+                                    </span>
+                                </Tooltip>
+                                {format === 'CSV' && (
+                                    <Tooltip content={csvTableTooltip}>
+                                        <span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowTable(true)}
+                                                disabled={showTableButtonDisabled}
+                                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                <ConvertButton
-                                                    direction="right"
-                                                    onClick={() =>
-                                                        handleConvertManual(
-                                                            f,
-                                                            selectedFormats[
-                                                            idx + 1
-                                                                ],
-                                                        )
-                                                    }
-                                                    disabled={!inputs[f].isValid}
-                                                    tooltip={
-                                                        !inputs[f].isValid
-                                                            ? `Der Inhalt von ${f} ist nicht gültig`
-                                                            : 'Konvertieren'
-                                                    }
-                                                />
-                                                <ConvertButton
-                                                    direction="left"
-                                                    onClick={() =>
-                                                        handleConvertManual(
-                                                            selectedFormats[
-                                                            idx + 1
-                                                                ],
-                                                            f,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        !inputs[
-                                                            selectedFormats[idx + 1]
-                                                            ].isValid
-                                                    }
-                                                    tooltip={
-                                                        !inputs[
-                                                            selectedFormats[idx + 1]
-                                                            ].isValid
-                                                            ? `Der Inhalt von ${selectedFormats[idx + 1]} ist nicht gültig`
-                                                            : 'Konvertieren'
-                                                    }
-                                                />
-                                            </motion.div>
-                                        )}
-                                </AnimatePresence>
-                            </Reorder.Item>
-                        ))}
-                    </Reorder.Group>
+                                                <TableIcon size={18} />
+                                            </button>
+                                        </span>
+                                    </Tooltip>
+                                )}
+                                <CopyButton value={value} />
+                                <Tooltip content="Vergrößern">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEnlarged(true)}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                                    >
+                                        <Maximize2 size={18} />
+                                    </button>
+                                </Tooltip>
+                                <Tooltip content={value.trim() === '' ? "Inhalt löschen - aktuell kein Inhalt" : "Inhalt löschen"}>
+                                     <span>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearContent}
+                                            disabled={value.trim() === ''}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </span>
+                                </Tooltip>
+                                <Tooltip content={allowRemove ? "Auswahl aufheben" : "Mindestens ein Format muss ausgewählt bleiben"}>
+                                    <span>
+                                        <button
+                                            type="button"
+                                            onClick={() => onFormatChange?.(null)}
+                                            disabled={!allowRemove}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </span>
+                                </Tooltip>
+                            </div>
+                        )}
+                    </div>
+                )}
 
-                    {canAddMoreFormats && (
-                        <motion.div
-                            layout="position"
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="shrink-0"
-                        >
-                            <Tooltip content="Format rechts hinzufügen">
-                                <button
-                                    type="button"
-                                    onClick={handleAddFormatRight}
-                                    className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
-                                >
-                                    <Plus size={24} />
-                                </button>
-                            </Tooltip>
-                        </motion.div>
+                <div
+                    className={`relative flex-1 rounded-xl overflow-hidden ${
+                        isValid
+                            ? 'border-2 border-gray-600'
+                            : 'border-red-500 border-4'
+                    }`}
+                >
+                    <MonacoEditor
+                        height="100%"
+                        language={
+                            format === 'CSV'
+                                ? 'plaintext'
+                                : format.toLowerCase()
+                        }
+                        theme="vs-dark"
+                        value={value}
+                        onChange={handleChange}
+                        editorDidMount={handleEditorDidMount}
+                        options={{
+                            minimap: { enabled: true },
+                            fontSize: 13,
+                            lineNumbers: 'on',
+                            scrollBeyondLastLine: true,
+                            automaticLayout: true,
+                            wordWrap: 'on',
+                            folding: true,
+                            lineDecorationsWidth: 0,
+                            lineNumbersMinChars: 3,
+                            glyphMargin: false,
+                            contextmenu: true,
+                            scrollbar: {
+                                vertical: 'visible',
+                                horizontal: 'visible',
+                                useShadows: true,
+                                verticalScrollbarSize: 10,
+                                horizontalScrollbarSize: 10,
+                            },
+                            autoClosingBrackets: 'languageDefined',
+                            autoClosingQuotes: 'languageDefined',
+                            formatOnType: true,
+                        }}
+                    />
+                    {!isValid && (
+                        <p className="absolute bottom-1 left-0 right-0 text-center text-gray-300 text-xs font-mono italic bg-gray-900 bg-opacity-75 py-0.5 pointer-events-none">
+                            Inhalt nicht wohlgeformt
+                        </p>
                     )}
                 </div>
-            </motion.div>
-        </div>
+            </div>
+
+            {isEnlarged && (
+                <EnlargedInputField
+                    format={format}
+                    onClose={() => setIsEnlarged(false)}
+                />
+            )}
+            {showTable && format === 'CSV' && (
+                <CSVTable csv={value} onClose={() => setShowTable(false)} />
+            )}
+        </>
     );
 }
