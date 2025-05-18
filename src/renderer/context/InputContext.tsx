@@ -18,7 +18,7 @@ interface InputState {
 
 interface Ctx {
     inputs: Record<Format, InputState>;
-    updateInput: (f: Format, v: string, ok: boolean) => void;
+    updateInput: (f: Format, v: string, ok: boolean, isAutoUpdate?: boolean) => void;
     lastEdited: Format | null;
     autoConvert: boolean;
     setAutoConvert: (b: boolean) => void;
@@ -38,9 +38,11 @@ export function InputProvider({ children }: { children: ReactNode }) {
     const [autoConvert, setAutoConvert] = useState(false);
     const [selectedFormats, setSelectedFormats] = useState<Format[]>([]);
 
-    const updateInput = (f: Format, v: string, ok: boolean) => {
+    const updateInput = (f: Format, v: string, ok: boolean, isAutoUpdate = false) => {
         setInputs((p) => ({ ...p, [f]: { value: v, isValid: ok } }));
-        setLast(f);
+        if (!isAutoUpdate) {
+            setLast(f);
+        }
     };
 
     const value = useMemo(

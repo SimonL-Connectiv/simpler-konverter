@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
-import { X, Table as TableIcon, Code } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { Tooltip } from 'flowbite-react';
+import { X, Table as TableIcon, Code, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useInputs, Format } from '../context/InputContext';
 import InputField from './InputField';
 import CopyButton from './CopyButton';
+import type * as monaco from 'monaco-editor';
 
 interface Props {
     format: Format;
@@ -11,9 +13,45 @@ interface Props {
 }
 
 export default function EnlargedInputField({ format, onClose }: Props) {
-    const { inputs } = useInputs();
+    const { inputs, updateInput } = useInputs();
     const [showTable, setShowTable] = useState(false);
-    const { value } = inputs[format];
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+    const { value, isValid } = inputs[format];
+
+    const childEditorInstanceRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+    const childModelListenerDisposableRef = useRef<monaco.IDisposable | null>(null);
+
+    const handleChildEditorReady = useCallback((editor: monaco.editor.IStandaloneCodeEditor | null) => {
+        if (childModelListenerDisposableRef.current) {
+            childModelListenerDisposableRef.current.dispose();
+            childModelListenerDisposableRef.current = null;
+        }
+
+        childEditorInstanceRef.current = editor;
+
+        if (editor && editor.getModel()) {
+            const model = editor.getModel()!;
+            const updateStates = () => {
+                setCanUndo((model as any).canUndo());
+                setCanRedo((model as any).canRedo());
+            };
+            updateStates();
+            childModelListenerDisposableRef.current = model.onDidChangeContent(updateStates);
+        } else {
+            setCanUndo(false);
+            setCanRedo(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (childModelListenerDisposableRef.current) {
+                childModelListenerDisposableRef.current.dispose();
+            }
+        };
+    }, []);
+
 
     const rows = useMemo(
         () =>
@@ -25,6 +63,43 @@ export default function EnlargedInputField({ format, onClose }: Props) {
     );
     const header = rows[0] ?? [];
     const data = rows.slice(1);
+
+    const handleClearContent = () => {
+        const editor = childEditorInstanceRef.current;
+        if (editor && !showTable) {
+            const model = editor.getModel();
+            if (model) {
+                const fullRange = model.getFullModelRange();
+                editor.executeEdits('clear-content', [{ range: fullRange, text: '' }]);
+            }
+        }
+    };
+
+    const handleUndo = () => {
+        if (childEditorInstanceRef.current && !showTable && canUndo) {
+            childEditorInstanceRef.current.trigger('keyboard', 'undo', null);
+        }
+    };
+
+    const handleRedo = () => {
+        if (childEditorInstanceRef.current && !showTable && canRedo) {
+            childEditorInstanceRef.current.trigger('keyboard', 'redo', null);
+        }
+    };
+
+    const isCsvDataEmptyForTable = format === 'CSV' && !value.trim();
+    const isCsvDataInvalidForTable = format === 'CSV' && !isValid;
+    const tableToggleButtonDisabled = format === 'CSV' && !showTable && (isCsvDataEmptyForTable || isCsvDataInvalidForTable);
+
+    let tableToggleTooltipContent = showTable ? "Code anzeigen" : "Tabelle anzeigen";
+    if (tableToggleButtonDisabled) {
+        if (isCsvDataEmptyForTable) {
+            tableToggleTooltipContent = "Kein Inhalt zum Anzeigen in der Tabelle";
+        } else if (isCsvDataInvalidForTable) {
+            tableToggleTooltipContent = "CSV-Inhalt ist nicht gültig";
+        }
+    }
+
 
     return (
         <motion.div
@@ -44,25 +119,65 @@ export default function EnlargedInputField({ format, onClose }: Props) {
                         {showTable ? 'CSV Tabelle' : format}
                     </h2>
                     <div className="flex items-center gap-2">
+                        <Tooltip content="Rückgängig (Strg+Z)">
+                            <span>
+                                <button
+                                    onClick={handleUndo}
+                                    disabled={!canUndo || showTable}
+                                    className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <RotateCcw size={20} />
+                                </button>
+                            </span>
+                        </Tooltip>
+                        <Tooltip content="Wiederherstellen (Strg+Y)">
+                            <span>
+                                <button
+                                    onClick={handleRedo}
+                                    disabled={!canRedo || showTable}
+                                    className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <RotateCw size={20} />
+                                </button>
+                            </span>
+                        </Tooltip>
                         {format === 'CSV' && (
-                            <button
-                                onClick={() => setShowTable(!showTable)}
-                                className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
-                            >
-                                {showTable ? (
-                                    <Code size={20} />
-                                ) : (
-                                    <TableIcon size={20} />
-                                )}
-                            </button>
+                            <Tooltip content={tableToggleTooltipContent}>
+                                <span>
+                                    <button
+                                        onClick={() => setShowTable(!showTable)}
+                                        disabled={tableToggleButtonDisabled}
+                                        className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {showTable ? (
+                                            <Code size={20} />
+                                        ) : (
+                                            <TableIcon size={20} />
+                                        )}
+                                    </button>
+                                </span>
+                            </Tooltip>
                         )}
                         <CopyButton value={value} />
-                        <button
-                            onClick={onClose}
-                            className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
-                        >
-                            <X size={20} />
-                        </button>
+                        <Tooltip content="Inhalt löschen">
+                             <span>
+                                <button
+                                    onClick={handleClearContent}
+                                    disabled={showTable}
+                                    className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Trash2 size={20}/>
+                                </button>
+                            </span>
+                        </Tooltip>
+                        <Tooltip content="Schließen">
+                            <button
+                                onClick={onClose}
+                                className="p-2 rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </Tooltip>
                     </div>
                 </div>
 
@@ -77,33 +192,33 @@ export default function EnlargedInputField({ format, onClose }: Props) {
                         >
                             <table className="w-full border-collapse">
                                 <thead>
-                                    <tr className="bg-gray-700">
-                                        {header.map((h, i) => (
-                                            <th
-                                                key={i}
-                                                className="border border-gray-600 px-2 py-1 font-semibold text-left"
-                                            >
-                                                {h}
-                                            </th>
-                                        ))}
-                                    </tr>
+                                <tr className="bg-gray-700">
+                                    {header.map((h, i) => (
+                                        <th
+                                            key={i}
+                                            className="border border-gray-600 px-2 py-1 font-semibold text-left"
+                                        >
+                                            {h}
+                                        </th>
+                                    ))}
+                                </tr>
                                 </thead>
                                 <tbody>
-                                    {data.map((cells, r) => (
-                                        <tr
-                                            key={r}
-                                            className="odd:bg-gray-800 even:bg-gray-700"
-                                        >
-                                            {cells.map((c, i) => (
-                                                <td
-                                                    key={i}
-                                                    className="border border-gray-600 px-2 py-1 whitespace-pre"
-                                                >
-                                                    {c}
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
+                                {data.map((cells, r) => (
+                                    <tr
+                                        key={r}
+                                        className="odd:bg-gray-800 even:bg-gray-700"
+                                    >
+                                        {cells.map((c, i) => (
+                                            <td
+                                                key={i}
+                                                className="border border-gray-600 px-2 py-1 whitespace-pre"
+                                            >
+                                                {c}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
                                 </tbody>
                             </table>
                         </motion.div>
@@ -119,6 +234,7 @@ export default function EnlargedInputField({ format, onClose }: Props) {
                                 format={format}
                                 hideActions
                                 disableSelect
+                                onEditorReady={handleChildEditorReady}
                             />
                         </motion.div>
                     )}

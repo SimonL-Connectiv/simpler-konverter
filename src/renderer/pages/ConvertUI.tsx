@@ -1,6 +1,6 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRightLeft, Plus } from 'lucide-react';
+import { useEffect, useCallback, useRef, useState } from 'react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { ArrowRightLeft, Plus, Grip } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'flowbite-react';
 import useConvert from '../hooks/ConvertHook';
@@ -24,18 +24,18 @@ export default function ConvertUI() {
     const convert = useConvert();
     const isAutoConverting = useRef(false);
     const conversionTimeoutRef = useRef<number | null>(null);
+    const [originalOverflowY, setOriginalOverflowY] = useState('');
 
     useEffect(() => {
         const s = location.state as { formats: Format[]; auto: boolean } | null;
         if (
             s?.formats &&
             Array.isArray(s.formats) &&
-            s.formats.every((f) => AVAILABLE_FORMATS.includes(f))
+            s.formats.every((f) => AVAILABLE_FORMATS.includes(f)) &&
+            s.formats.length > 0
         ) {
             setSelectedFormats(s.formats);
-            if (typeof s.auto === 'boolean') {
-                setAutoConvert(s.auto);
-            }
+            setAutoConvert(s.auto);
         } else {
             navigate('/');
         }
@@ -60,7 +60,7 @@ export default function ConvertUI() {
                     try {
                         const output = convert(sourceFormat, targetFormat);
                         if (inputs[targetFormat].value !== output) {
-                            updateInput(targetFormat, output, true);
+                            updateInput(targetFormat, output, true, true);
                         }
                     } catch (error) {
                         console.error(
@@ -71,6 +71,7 @@ export default function ConvertUI() {
                             targetFormat,
                             'Konvertierungsfehler',
                             false,
+                            true,
                         );
                     }
                 });
@@ -106,40 +107,52 @@ export default function ConvertUI() {
     }, [
         autoConvert,
         lastEdited,
-        inputs[lastEdited]?.isValid,
+        inputs,
         scheduleAutoConversion,
     ]);
 
-    const handleFormatChange = (i: number, nf: Format | null) =>
-        nf === null
-            ? setSelectedFormats((prevSelectedFormats) =>
-                  prevSelectedFormats.filter((_, idx) => idx !== i),
-              )
-            : setSelectedFormats((prevSelectedFormats: Format[]) => {
-                  const newSelectedFormats = [...prevSelectedFormats];
-                  if (
-                      nf &&
-                      AVAILABLE_FORMATS.includes(nf) &&
-                      !newSelectedFormats.includes(nf)
-                  ) {
-                      newSelectedFormats[i] = nf;
-                  } else if (
-                      nf &&
-                      AVAILABLE_FORMATS.includes(nf) &&
-                      newSelectedFormats.includes(nf)
-                  ) {
-                      const currentFormatAtIndex = newSelectedFormats[i];
-                      const newFormatOldIndex = newSelectedFormats.indexOf(nf);
-                      if (newFormatOldIndex !== -1 && i !== newFormatOldIndex) {
-                          newSelectedFormats[i] = nf;
-                          newSelectedFormats[newFormatOldIndex] =
-                              currentFormatAtIndex;
-                      }
-                  }
-                  return newSelectedFormats;
-              });
+    const handleFormatChange = (i: number, nf: Format | null) => {
+        if (nf === null) {
+            if (selectedFormats.length > 1) {
+                setSelectedFormats((prevSelectedFormats) =>
+                    prevSelectedFormats.filter((_, idx) => idx !== i),
+                );
+            }
+        } else {
+            setSelectedFormats((prevSelectedFormats: Format[]) => {
+                const newSelectedFormats = [...prevSelectedFormats];
+                if (
+                    nf &&
+                    AVAILABLE_FORMATS.includes(nf) &&
+                    !newSelectedFormats.includes(nf)
+                ) {
+                    newSelectedFormats[i] = nf;
+                } else if (
+                    nf &&
+                    AVAILABLE_FORMATS.includes(nf) &&
+                    newSelectedFormats.includes(nf)
+                ) {
+                    const currentFormatAtIndex = newSelectedFormats[i];
+                    const newFormatOldIndex = newSelectedFormats.indexOf(nf);
+                    if (newFormatOldIndex !== -1 && i !== newFormatOldIndex) {
+                        newSelectedFormats[i] = nf;
+                        newSelectedFormats[newFormatOldIndex] =
+                            currentFormatAtIndex;
+                    }
+                }
+                return newSelectedFormats;
+            });
+        }
+    };
 
-    const handleAddFormat = () => {
+    const handleAddFormatLeft = () => {
+        const free = AVAILABLE_FORMATS.filter(
+            (f) => !selectedFormats.includes(f),
+        );
+        if (free.length) setSelectedFormats((prev) => [free[0], ...prev]);
+    };
+
+    const handleAddFormatRight = () => {
         const free = AVAILABLE_FORMATS.filter(
             (f) => !selectedFormats.includes(f),
         );
@@ -157,9 +170,20 @@ export default function ConvertUI() {
         }
     };
 
-    const availableFormatsForSelection = AVAILABLE_FORMATS.filter(
-        (f) => !selectedFormats.includes(f),
-    );
+    const canAddMoreFormats = selectedFormats.length < AVAILABLE_FORMATS.length;
+
+    const handleReorder = (newOrder: Format[]) => {
+        setSelectedFormats(newOrder);
+    };
+
+    const handleDragStart = () => {
+        setOriginalOverflowY(document.body.style.overflowY);
+        document.body.style.overflowY = 'hidden';
+    };
+
+    const handleDragEnd = () => {
+        document.body.style.overflowY = originalOverflowY;
+    };
 
     return (
         <div className="min-w-[1000px] flex flex-col p-4">
@@ -203,112 +227,158 @@ export default function ConvertUI() {
                     </label>
                 </div>
 
-                <div className="flex items-center justify-center gap-4 min-w-[90vw] overflow-hidden">
-                    {selectedFormats.map((f, idx) => (
-                        <div
-                            key={`${f}-${idx}`}
-                            className="flex items-center gap-4"
+                <div className="flex items-center justify-center gap-4 min-w-[90vw]">
+                    {canAddMoreFormats && (
+                        <motion.div
+                            layout="position"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="shrink-0"
                         >
-                            <motion.div
-                                layout
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className="w-[400px] h-[530px]"
-                            >
-                                <InputField
-                                    format={f}
-                                    onChange={(v, ok) =>
-                                        handleInputChange(f, v, ok)
-                                    }
-                                    availableFormats={AVAILABLE_FORMATS.filter(
-                                        (fmt) =>
-                                            !selectedFormats.includes(fmt) ||
-                                            fmt === f,
-                                    )}
-                                    onFormatChange={(nf) =>
-                                        handleFormatChange(idx, nf)
-                                    }
-                                    showAddButton={false}
-                                />
-                            </motion.div>
-                            <AnimatePresence>
-                                {!autoConvert &&
-                                    idx < selectedFormats.length - 1 && (
-                                        <motion.div
-                                            layout
-                                            initial={{ width: 40, opacity: 1 }}
-                                            animate={{ width: 40, opacity: 1 }}
-                                            exit={{ width: 0, opacity: 0 }}
-                                            transition={{ duration: 0.2 }}
-                                            className="flex flex-col gap-2 overflow-hidden"
-                                        >
-                                            <ConvertButton
-                                                direction="right"
-                                                onClick={() =>
-                                                    handleConvertManual(
-                                                        f,
-                                                        selectedFormats[
-                                                            idx + 1
-                                                        ],
-                                                    )
-                                                }
-                                                disabled={!inputs[f].isValid}
-                                                tooltip={
-                                                    !inputs[f].isValid
-                                                        ? `Der Inhalt von ${f} ist nicht gültig`
-                                                        : 'Konvertieren'
-                                                }
-                                            />
-                                            <ConvertButton
-                                                direction="left"
-                                                onClick={() =>
-                                                    handleConvertManual(
-                                                        selectedFormats[
-                                                            idx + 1
-                                                        ],
-                                                        f,
-                                                    )
-                                                }
-                                                disabled={
-                                                    !inputs[
-                                                        selectedFormats[idx + 1]
-                                                    ].isValid
-                                                }
-                                                tooltip={
-                                                    !inputs[
-                                                        selectedFormats[idx + 1]
-                                                    ].isValid
-                                                        ? `Der Inhalt von ${selectedFormats[idx + 1]} ist nicht gültig`
-                                                        : 'Konvertieren'
-                                                }
-                                            />
-                                        </motion.div>
-                                    )}
-                            </AnimatePresence>
-                        </div>
-                    ))}
-                    <AnimatePresence>
-                        {selectedFormats.length < AVAILABLE_FORMATS.length &&
-                            availableFormatsForSelection.length > 0 && (
-                                <motion.div
-                                    layout
-                                    initial={{ scale: 0.8, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    exit={{ scale: 0.8, opacity: 0 }}
+                            <Tooltip content="Format links hinzufügen">
+                                <button
+                                    type="button"
+                                    onClick={handleAddFormatLeft}
+                                    className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
                                 >
-                                    <Tooltip content="Format hinzufügen">
-                                        <button
-                                            type="button"
-                                            onClick={handleAddFormat}
-                                            className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
-                                        >
-                                            <Plus size={24} />
-                                        </button>
-                                    </Tooltip>
+                                    <Plus size={24} />
+                                </button>
+                            </Tooltip>
+                        </motion.div>
+                    )}
+
+                    <Reorder.Group
+                        axis="x"
+                        values={selectedFormats}
+                        onReorder={handleReorder}
+                        className="flex items-center gap-4 py-2"
+                    >
+                        {selectedFormats.map((f, idx) => (
+                            <Reorder.Item
+                                key={f}
+                                value={f}
+                                className="flex items-center gap-4 shrink-0"
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                whileDrag={{ zIndex: 50 }}
+                                dragConstraints={{
+                                    top: 0,
+                                    bottom: 0,
+                                }}
+                                dragElastic={0.1}
+                                layoutId={`format-${f}`}
+                                layout
+                                transition={{ duration: 0.3, type: "spring" }}
+                            >
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    transition={{ duration: 0.3, type: "spring" }}
+                                    className="w-[400px] h-[530px] relative rounded-xl"
+                                >
+                                    <div className="absolute top-9 -left-9 transform-translate-x-1/2 z-20">
+                                        <div className="active:bg-gray-800 hover:bg-gray-800/50 rounded-lg p-2 cursor-grab active:cursor-grabbing transition-colors">
+                                            <Grip size={20} className="opacity-70 hover:opacity-100" />
+                                        </div>
+                                    </div>
+                                    <InputField
+                                        format={f}
+                                        onChange={(v, ok) =>
+                                            handleInputChange(f, v, ok)
+                                        }
+                                        availableFormats={AVAILABLE_FORMATS.filter(
+                                            (fmt) =>
+                                                !selectedFormats.includes(fmt) ||
+                                                fmt === f,
+                                        )}
+                                        onFormatChange={(nf) =>
+                                            handleFormatChange(idx, nf)
+                                        }
+                                        showAddButton={false}
+                                        allowRemove={selectedFormats.length > 1}
+                                    />
                                 </motion.div>
-                            )}
-                    </AnimatePresence>
+                                <AnimatePresence>
+                                    {!autoConvert &&
+                                        idx < selectedFormats.length - 1 && (
+                                            <motion.div
+                                                layout="position"
+                                                initial={{ width: 0, opacity: 0 }}
+                                                animate={{ width: 40, opacity: 1 }}
+                                                exit={{ width: 0, opacity: 0 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="flex flex-col gap-2 overflow-hidden shrink-0"
+                                            >
+                                                <ConvertButton
+                                                    direction="right"
+                                                    onClick={() =>
+                                                        handleConvertManual(
+                                                            f,
+                                                            selectedFormats[
+                                                            idx + 1
+                                                                ],
+                                                        )
+                                                    }
+                                                    disabled={!inputs[f].isValid}
+                                                    tooltip={
+                                                        !inputs[f].isValid
+                                                            ? `Der Inhalt von ${f} ist nicht gültig`
+                                                            : 'Konvertieren'
+                                                    }
+                                                />
+                                                <ConvertButton
+                                                    direction="left"
+                                                    onClick={() =>
+                                                        handleConvertManual(
+                                                            selectedFormats[
+                                                            idx + 1
+                                                                ],
+                                                            f,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        !inputs[
+                                                            selectedFormats[idx + 1]
+                                                            ].isValid
+                                                    }
+                                                    tooltip={
+                                                        !inputs[
+                                                            selectedFormats[idx + 1]
+                                                            ].isValid
+                                                            ? `Der Inhalt von ${selectedFormats[idx + 1]} ist nicht gültig`
+                                                            : 'Konvertieren'
+                                                    }
+                                                />
+                                            </motion.div>
+                                        )}
+                                </AnimatePresence>
+                            </Reorder.Item>
+                        ))}
+                    </Reorder.Group>
+
+                    {canAddMoreFormats && (
+                        <motion.div
+                            layout="position"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="shrink-0"
+                        >
+                            <Tooltip content="Format rechts hinzufügen">
+                                <button
+                                    type="button"
+                                    onClick={handleAddFormatRight}
+                                    className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors"
+                                >
+                                    <Plus size={24} />
+                                </button>
+                            </Tooltip>
+                        </motion.div>
+                    )}
                 </div>
             </motion.div>
         </div>
