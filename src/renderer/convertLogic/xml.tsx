@@ -43,9 +43,33 @@ const emptyToNull = (v: Any): Any =>
               )
             : v;
 
+const wrapArr = (v: Any): Any =>
+    Array.isArray(v)
+        ? { item: v.map(wrapArr) }
+        : typeof v === 'object' && v !== null
+          ? Object.fromEntries(
+                Object.entries(v).map(([k, x]) => [k, wrapArr(x)]),
+            )
+          : v;
+
+const unwrapArr = (v: Any): Any =>
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.keys(v).length === 1 &&
+    'item' in v
+        ? unwrapArr((v as any).item)
+        : Array.isArray(v)
+          ? v.map(unwrapArr)
+          : typeof v === 'object'
+            ? Object.fromEntries(
+                  Object.entries(v).map(([k, x]) => [k, unwrapArr(x)]),
+              )
+            : v;
+
 export const toBase = (txt: string) => {
     if (!txt.trim()) return {};
-    return emptyToNull(p.parse(txt));
+    return unwrapArr(emptyToNull(p.parse(txt)));
 };
 
 export const fromBase = (obj: Any) => {
@@ -56,10 +80,13 @@ export const fromBase = (obj: Any) => {
     Object.keys(obj).forEach(
         (k) => k !== '?xml' && (elems[k] = nullToEmpty(obj[k])),
     );
-    const keys = Object.keys(elems);
+    const elemsWrapped = Object.fromEntries(
+        Object.entries(elems).map(([k, v]) => [k, wrapArr(v)]),
+    );
+    const keys = Object.keys(elemsWrapped);
     return b.build(
         keys.length === 1
-            ? { '?xml': decl, [keys[0]]: elems[keys[0]] }
-            : { '?xml': decl, root: elems },
+            ? { '?xml': decl, [keys[0]]: elemsWrapped[keys[0]] }
+            : { '?xml': decl, root: elemsWrapped },
     );
 };

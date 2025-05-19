@@ -42,8 +42,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const handleError = (event: ErrorEvent) => {
-            const error = event.error;
-            // Spezifische Prüfung auf den "Canceled"-Fehler
+            const { error } = event;
             if (
                 error &&
                 typeof error === 'object' &&
@@ -55,17 +54,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     'Eine vorherige Operation wurde abgebrochen.',
                     3000,
                 );
-                // Verhindert die Standard-Konsolenausgabe für diesen spezifischen Fehler
                 return true;
             }
-            // Für alle anderen Fehler wird false zurückgegeben,
-            // sodass die Standard-Fehlerbehandlung des Browsers greift.
             return false;
         };
 
         const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-            const reason = event.reason;
-            // Spezifische Prüfung auf den "Canceled"-Fehler bei Promise Rejections
+            const { reason } = event;
             if (
                 reason &&
                 typeof reason === 'object' &&
@@ -77,8 +72,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     'Eine vorherige asynchrone Operation wurde abgebrochen.',
                     3000,
                 );
-                // Hier gibt es kein standardisiertes `return true`, um die Konsole zu unterdrücken,
-                // aber der Toast wird angezeigt. Andere Rejections werden nicht als Toast behandelt.
             }
         };
 
@@ -150,4 +143,3 @@ export function useToast() {
     }
     return ctx;
 }
-

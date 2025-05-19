@@ -8,6 +8,7 @@ interface Props {
     onClick: () => void;
     disabled?: boolean;
     tooltip?: string;
+    placement?: string;
 }
 
 export default function ConvertButton({
@@ -15,6 +16,7 @@ export default function ConvertButton({
     onClick,
     disabled,
     tooltip = 'Konvertieren',
+    placement = 'auto',
 }: Props) {
     const icons = {
         top: ArrowUp,
@@ -25,7 +27,7 @@ export default function ConvertButton({
     const Icon = icons[direction];
 
     return (
-        <Tooltip content={tooltip}>
+        <Tooltip content={tooltip} placement={placement}>
             <button
                 type="button"
                 onClick={onClick}

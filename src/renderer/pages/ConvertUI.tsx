@@ -1,12 +1,11 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { ArrowRightLeft, Plus, Grip } from 'lucide-react';
+import { ArrowRightLeft, Plus } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'flowbite-react';
 import useConvert from '../hooks/ConvertHook';
 import { useInputs, AVAILABLE_FORMATS, Format } from '../context/InputContext';
-import InputField from '../components/InputField';
-import ConvertButton from '../components/ConvertButton';
+import FormatItem from '../components/FormatItem';
 
 export default function ConvertUI() {
     const navigate = useNavigate();
@@ -104,12 +103,7 @@ export default function ConvertUI() {
         if (autoConvert && lastEdited && inputs[lastEdited]?.isValid) {
             scheduleAutoConversion(lastEdited);
         }
-    }, [
-        autoConvert,
-        lastEdited,
-        inputs,
-        scheduleAutoConversion,
-    ]);
+    }, [autoConvert, lastEdited, inputs, scheduleAutoConversion]);
 
     const handleFormatChange = (i: number, nf: Format | null) => {
         if (nf === null) {
@@ -256,106 +250,19 @@ export default function ConvertUI() {
                         className="flex items-center gap-4 py-2"
                     >
                         {selectedFormats.map((f, idx) => (
-                            <Reorder.Item
+                            <FormatItem
                                 key={f}
-                                value={f}
-                                className="flex items-center gap-4 shrink-0"
-                                onDragStart={handleDragStart}
-                                onDragEnd={handleDragEnd}
-                                whileDrag={{ zIndex: 50 }}
-                                dragConstraints={{
-                                    top: 0,
-                                    bottom: 0,
-                                }}
-                                dragElastic={0.1}
-                                layoutId={`format-${f}`}
-                                layout
-                                transition={{ duration: 0.3, type: "spring" }}
-                            >
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.8 }}
-                                    transition={{ duration: 0.3, type: "spring" }}
-                                    className="w-[400px] h-[530px] relative rounded-xl"
-                                >
-                                    <div className="absolute top-9 -left-9 transform-translate-x-1/2 z-20">
-                                        <div className="active:bg-gray-800 hover:bg-gray-800/50 rounded-lg p-2 cursor-grab active:cursor-grabbing transition-colors">
-                                            <Grip size={20} className="opacity-70 hover:opacity-100" />
-                                        </div>
-                                    </div>
-                                    <InputField
-                                        format={f}
-                                        onChange={(v, ok) =>
-                                            handleInputChange(f, v, ok)
-                                        }
-                                        availableFormats={AVAILABLE_FORMATS.filter(
-                                            (fmt) =>
-                                                !selectedFormats.includes(fmt) ||
-                                                fmt === f,
-                                        )}
-                                        onFormatChange={(nf) =>
-                                            handleFormatChange(idx, nf)
-                                        }
-                                        showAddButton={false}
-                                        allowRemove={selectedFormats.length > 1}
-                                    />
-                                </motion.div>
-                                <AnimatePresence>
-                                    {!autoConvert &&
-                                        idx < selectedFormats.length - 1 && (
-                                            <motion.div
-                                                layout="position"
-                                                initial={{ width: 0, opacity: 0 }}
-                                                animate={{ width: 40, opacity: 1 }}
-                                                exit={{ width: 0, opacity: 0 }}
-                                                transition={{ duration: 0.3 }}
-                                                className="flex flex-col gap-2 overflow-hidden shrink-0"
-                                            >
-                                                <ConvertButton
-                                                    direction="right"
-                                                    onClick={() =>
-                                                        handleConvertManual(
-                                                            f,
-                                                            selectedFormats[
-                                                            idx + 1
-                                                                ],
-                                                        )
-                                                    }
-                                                    disabled={!inputs[f].isValid}
-                                                    tooltip={
-                                                        !inputs[f].isValid
-                                                            ? `Der Inhalt von ${f} ist nicht gültig`
-                                                            : 'Konvertieren'
-                                                    }
-                                                />
-                                                <ConvertButton
-                                                    direction="left"
-                                                    onClick={() =>
-                                                        handleConvertManual(
-                                                            selectedFormats[
-                                                            idx + 1
-                                                                ],
-                                                            f,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        !inputs[
-                                                            selectedFormats[idx + 1]
-                                                            ].isValid
-                                                    }
-                                                    tooltip={
-                                                        !inputs[
-                                                            selectedFormats[idx + 1]
-                                                            ].isValid
-                                                            ? `Der Inhalt von ${selectedFormats[idx + 1]} ist nicht gültig`
-                                                            : 'Konvertieren'
-                                                    }
-                                                />
-                                            </motion.div>
-                                        )}
-                                </AnimatePresence>
-                            </Reorder.Item>
+                                f={f}
+                                idx={idx}
+                                handleInputChange={handleInputChange}
+                                handleFormatChange={handleFormatChange}
+                                autoConvert={autoConvert}
+                                inputs={inputs}
+                                selectedFormats={selectedFormats}
+                                handleConvertManual={handleConvertManual}
+                                handleDragStart={handleDragStart}
+                                handleDragEnd={handleDragEnd}
+                            />
                         ))}
                     </Reorder.Group>
 

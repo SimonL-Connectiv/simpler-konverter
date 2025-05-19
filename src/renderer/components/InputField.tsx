@@ -1,7 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import MonacoEditor from 'react-monaco-editor';
 import type * as monaco from 'monaco-editor';
-import { Maximize2, Table as TableIcon, Plus, Trash2, X, RotateCcw, RotateCw } from 'lucide-react';
+import {
+    Maximize2,
+    Table as TableIcon,
+    Plus,
+    Trash2,
+    X,
+    RotateCcw,
+    RotateCw,
+} from 'lucide-react';
 import { Tooltip, Select } from 'flowbite-react';
 import { useInputs, Format } from '../context/InputContext';
 import CopyButton from './CopyButton';
@@ -18,21 +26,23 @@ interface Props {
     hideActions?: boolean;
     disableSelect?: boolean;
     allowRemove?: boolean;
-    onEditorReady?: (editor: monaco.editor.IStandaloneCodeEditor | null) => void;
+    onEditorReady?: (
+        editor: monaco.editor.IStandaloneCodeEditor | null,
+    ) => void;
 }
 
 export default function InputField({
-                                       format,
-                                       onChange,
-                                       availableFormats,
-                                       onFormatChange,
-                                       showAddButton,
-                                       onAddFormat,
-                                       hideActions,
-                                       disableSelect,
-                                       allowRemove = true,
-                                       onEditorReady,
-                                   }: Props) {
+    format,
+    onChange,
+    availableFormats,
+    onFormatChange,
+    showAddButton,
+    onAddFormat,
+    hideActions,
+    disableSelect,
+    allowRemove = true,
+    onEditorReady,
+}: Props) {
     const { inputs, updateInput } = useInputs();
     const [isEnlarged, setIsEnlarged] = useState(false);
     const [showTable, setShowTable] = useState(false);
@@ -101,26 +111,29 @@ export default function InputField({
         debouncedValidateAndUpdate(v);
     };
 
-    const updateEditorStates = useCallback((editor: monaco.editor.IStandaloneCodeEditor | null) => {
-        if (modelContentListenerRef.current) {
-            modelContentListenerRef.current.dispose();
-            modelContentListenerRef.current = null;
-        }
+    const updateEditorStates = useCallback(
+        (editor: monaco.editor.IStandaloneCodeEditor | null) => {
+            if (modelContentListenerRef.current) {
+                modelContentListenerRef.current.dispose();
+                modelContentListenerRef.current = null;
+            }
 
-        if (editor && editor.getModel()) {
-            const model = editor.getModel()!;
-            const updateUndoRedo = () => {
-                setCanUndo((model as any).canUndo());
-                setCanRedo((model as any).canRedo());
-            };
-            updateUndoRedo();
-            modelContentListenerRef.current = model.onDidChangeContent(updateUndoRedo);
-        } else {
-            setCanUndo(false);
-            setCanRedo(false);
-        }
-    }, []);
-
+            if (editor && editor.getModel()) {
+                const model = editor.getModel()!;
+                const updateUndoRedo = () => {
+                    setCanUndo((model as any).canUndo());
+                    setCanRedo((model as any).canRedo());
+                };
+                updateUndoRedo();
+                modelContentListenerRef.current =
+                    model.onDidChangeContent(updateUndoRedo);
+            } else {
+                setCanUndo(false);
+                setCanRedo(false);
+            }
+        },
+        [],
+    );
 
     const handleEditorDidMount = (
         editor: monaco.editor.IStandaloneCodeEditor,
@@ -161,7 +174,8 @@ export default function InputField({
         if (monacoMarkersListenerRef.current) {
             monacoMarkersListenerRef.current.dispose();
         }
-        monacoMarkersListenerRef.current = instance.editor.onDidChangeMarkers(markerListener);
+        monacoMarkersListenerRef.current =
+            instance.editor.onDidChangeMarkers(markerListener);
 
         editor.onDidDispose(() => {
             if (monacoMarkersListenerRef.current) {
@@ -203,7 +217,9 @@ export default function InputField({
             const model = editor.getModel();
             if (model) {
                 const fullRange = model.getFullModelRange();
-                editor.executeEdits('clear-content', [{ range: fullRange, text: '' }]);
+                editor.executeEdits('clear-content', [
+                    { range: fullRange, text: '' },
+                ]);
             }
         }
     };
@@ -239,7 +255,6 @@ export default function InputField({
         }
     }
 
-
     return (
         <>
             <div className="flex flex-col h-full">
@@ -262,9 +277,7 @@ export default function InputField({
                                     className="w-32 text-xs [&>select]:py-2 [&>select]:bg-gray-800 [&>select]:border-gray-600"
                                     colors="gray"
                                 >
-                                    <option value={format} disabled hidden>
-                                        {format}
-                                    </option>
+                                    <option value={format}>{format}</option>
                                     {opts.map((f) => (
                                         <option key={f}>{f}</option>
                                     ))}
@@ -315,8 +328,12 @@ export default function InputField({
                                         <span>
                                             <button
                                                 type="button"
-                                                onClick={() => setShowTable(true)}
-                                                disabled={showTableButtonDisabled}
+                                                onClick={() =>
+                                                    setShowTable(true)
+                                                }
+                                                disabled={
+                                                    showTableButtonDisabled
+                                                }
                                                 className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <TableIcon size={18} />
@@ -334,8 +351,14 @@ export default function InputField({
                                         <Maximize2 size={18} />
                                     </button>
                                 </Tooltip>
-                                <Tooltip content={value.trim() === '' ? "Inhalt löschen - aktuell kein Inhalt" : "Inhalt löschen"}>
-                                     <span>
+                                <Tooltip
+                                    content={
+                                        value.trim() === ''
+                                            ? 'Inhalt löschen - aktuell kein Inhalt'
+                                            : 'Inhalt löschen'
+                                    }
+                                >
+                                    <span>
                                         <button
                                             type="button"
                                             onClick={handleClearContent}
@@ -346,11 +369,19 @@ export default function InputField({
                                         </button>
                                     </span>
                                 </Tooltip>
-                                <Tooltip content={allowRemove ? "Auswahl aufheben" : "Mindestens ein Format muss ausgewählt bleiben"}>
+                                <Tooltip
+                                    content={
+                                        allowRemove
+                                            ? 'Auswahl aufheben'
+                                            : 'Mindestens ein Format muss ausgewählt bleiben'
+                                    }
+                                >
                                     <span>
                                         <button
                                             type="button"
-                                            onClick={() => onFormatChange?.(null)}
+                                            onClick={() =>
+                                                onFormatChange?.(null)
+                                            }
                                             disabled={!allowRemove}
                                             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-700 active:scale-95 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
@@ -425,4 +456,3 @@ export default function InputField({
         </>
     );
 }
-

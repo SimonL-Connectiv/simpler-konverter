@@ -5,6 +5,15 @@ type V = any;
 const isObject = (val: V): val is Record<string, V> =>
     val && typeof val === 'object' && !Array.isArray(val);
 
+const isPrimitive = (val: V) =>
+    val === null ||
+    typeof val === 'string' ||
+    typeof val === 'number' ||
+    typeof val === 'boolean';
+
+const isFlatPrimitiveArray = (arr: V): arr is V[] =>
+    Array.isArray(arr) && arr.every(isPrimitive);
+
 function flattenToPaths(
     data: V,
     prefix = '',
@@ -13,15 +22,23 @@ function flattenToPaths(
     if (isObject(data)) {
         Object.keys(data).forEach((key) => {
             flattenToPaths(
-                data[key],
+                (data as Record<string, V>)[key],
                 prefix ? `${prefix}.${key}` : key,
                 result,
             );
         });
     } else if (Array.isArray(data)) {
-        data.forEach((item, index) => {
-            flattenToPaths(item, `${prefix}[${index}]`, result);
-        });
+        if (isFlatPrimitiveArray(data)) {
+            if (data.length === 1) {
+                flattenToPaths(data[0], `${prefix}[0]`, result);
+            } else {
+                result[prefix] = data.slice();
+            }
+        } else {
+            (data as V[]).forEach((item, index) => {
+                flattenToPaths(item, `${prefix}[${index}]`, result);
+            });
+        }
     } else {
         result[prefix] = data;
     }
@@ -33,6 +50,7 @@ function setDeep(root: any, path: string, value: V) {
         .replace(/\[(\w+)\]/g, '.$1')
         .replace(/^\./, '')
         .split('.');
+
     let current = root;
     keys.forEach((key, index) => {
         if (index === keys.length - 1) {
@@ -62,14 +80,14 @@ export const fromBase = (baseObject: V): string => {
         baseObject.every((item) => isObject(item) && !Array.isArray(item))
     ) {
         const allKeys = new Set<string>();
-        baseObject.forEach((row) => {
+        (baseObject as V[]).forEach((row) => {
             Object.keys(row).forEach((key) => allKeys.add(key));
         });
         const fields = Array.from(allKeys);
-        const data = baseObject.map((row) => {
+        const data = (baseObject as V[]).map((row) => {
             const record: Record<string, V> = {};
             fields.forEach((field) => {
-                record[field] = row[field] !== undefined ? row[field] : '';
+                record[field] = (row as Record<string, V>)[field] ?? '';
             });
             return record;
         });
@@ -79,77 +97,101 @@ export const fromBase = (baseObject: V): string => {
     const flatPaths = flattenToPaths(baseObject);
     if (Object.keys(flatPaths).length === 0) return '';
 
-    const dataForPapa = Object.entries(flatPaths).map(([path, value]) => ({
-        path,
-        value: value === null || value === undefined ? '' : String(value),
-    }));
-
-    return Papa.unparse(dataForPapa, {
-        header: true,
-        skipEmptyLines: true,
+    let maxArrayLen = 0;
+    Object.values(flatPaths).forEach((v) => {
+        if (Array.isArray(v)) maxArrayLen = Math.max(maxArrayLen, v.length);
     });
+
+    const valueHeaders: string[] = [];
+    if (maxArrayLen === 0) {
+        valueHeaders.push('value');
+    } else {
+        for (let i = 1; i <= maxArrayLen; i++) valueHeaders.push(`value${i}`);
+    }
+
+    const dataForPapa: Record<string, V>[] = [];
+
+    Object.entries(flatPaths).forEach(([path, val]) => {
+        if (Array.isArray(val)) {
+            const row: Record<string, V> = { path };
+            val.forEach((v, i) => {
+                row[`value${i + 1}`] = v ?? '';
+            });
+            dataForPapa.push(row);
+        } else {
+            const key = maxArrayLen === 0 ? 'value' : 'value1';
+            dataForPapa.push({
+                path,
+                [key]: val ?? '',
+            });
+        }
+    });
+
+    const fields = ['path', ...valueHeaders];
+    return Papa.unparse({ fields, data: dataForPapa });
 };
 
 export const toBase = (csvString: string): V => {
-    if (!csvString.trim()) {
-        return {};
-    }
+    if (!csvString.trim()) return {};
 
-    const parseResult = Papa.parse<Record<string, string>>(csvString.trim(), {
+    const parseResult = Papa.parse<Record<string, V>>(csvString.trim(), {
         header: true,
         skipEmptyLines: 'greedy',
         dynamicTyping: true,
-        transformHeader: (header) => header.trim(),
+        transformHeader: (h) => h.trim(),
     });
 
     if (parseResult.errors.length > 0) {
         console.warn('CSV parsing errors:', parseResult.errors);
     }
 
-    const { data } = parseResult;
+    const rows = parseResult.data;
+    if (rows.length === 0) return {};
 
-    if (data.length === 0) {
-        return {};
-    }
+    const headers = parseResult.meta.fields ?? [];
+    if (!headers.includes('path')) return {};
 
-    const headers = parseResult.meta.fields;
-    if (headers && headers.includes('path') && headers.includes('value')) {
-        const root: Record<string, any> = {};
-        data.forEach((row) => {
-            const pathKey = 'path';
-            const valueKey = 'value';
-            const path = row[pathKey];
-            const value = row[valueKey];
-            if (
-                path !== undefined &&
-                path !== null &&
-                String(path).trim() !== ''
-            ) {
-                setDeep(root, String(path), value);
-            }
-        });
-        if (Object.keys(root).length === 1 && root.hasOwnProperty('rows')) {
-            if (Array.isArray(root.rows)) return root.rows;
-        }
-        return root;
-    }
-
-    const isArrayOfObjects = data.every(
-        (item) => typeof item === 'object' && item !== null,
+    const valueHeaders = headers.filter(
+        (h) => h !== 'path' && (h === 'value' || /^value\d+$/.test(h)),
     );
-    if (isArrayOfObjects) {
-        return data.map((row) => {
-            const newRow: Record<string, V> = {};
-            for (const key in row) {
-                if (Object.prototype.hasOwnProperty.call(row, key)) {
-                    const value = (row as Record<string, V>)[key];
-                    newRow[key.trim()] =
-                        value === '' || value === null ? undefined : value;
-                }
+    valueHeaders.sort((a, b) => {
+        if (a === 'value') return -1;
+        if (b === 'value') return 1;
+        const ai = parseInt(a.replace('value', ''), 10);
+        const bi = parseInt(b.replace('value', ''), 10);
+        return ai - bi;
+    });
+
+    const root: Record<string, V> = {};
+
+    rows.forEach((row) => {
+        const { path } = row;
+        if (path === undefined || path === null || String(path).trim() === '')
+            return;
+
+        const values: V[] = [];
+        valueHeaders.forEach((vh) => {
+            const v = row[vh];
+            if (v !== undefined && v !== null && String(v).trim() !== '') {
+                values.push(v);
             }
-            return newRow;
         });
+
+        let val: V;
+        if (values.length > 1) {
+            val = values;
+        } else if (values.length === 1) {
+            val = values[0];
+        } else {
+            val = undefined;
+        }
+
+        setDeep(root, String(path), val);
+    });
+
+    if (Object.keys(root).length === 1 && root.hasOwnProperty('rows')) {
+        if (Array.isArray(root.rows)) return root.rows;
     }
 
-    return {};
+    return root;
 };
