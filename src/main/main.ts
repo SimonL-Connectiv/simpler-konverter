@@ -74,6 +74,7 @@ const createWindow = async () => {
         width: 1450,
         height: 900,
         icon: getAssetPath('arrow-right-left.ico'),
+        autoHideMenuBar: true,
         webPreferences: {
             preload: app.isPackaged
                 ? path.join(__dirname, 'preload.js')
@@ -124,8 +125,7 @@ app.on('window-all-closed', () => {
     }
 });
 
-app
-    .whenReady()
+app.whenReady()
     .then(() => {
         createWindow();
         app.on('activate', () => {
