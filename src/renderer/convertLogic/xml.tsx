@@ -1,3 +1,4 @@
+// fast-xml-parser: XML ↔ Objekt
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
 type Any = any;
@@ -21,6 +22,7 @@ const b = new XMLBuilder({
     processEntities: false,
 });
 
+// null → ''
 const nullToEmpty = (v: Any): Any =>
     v === null
         ? ''
@@ -32,6 +34,7 @@ const nullToEmpty = (v: Any): Any =>
               )
             : v;
 
+// '' → null
 const emptyToNull = (v: Any): Any =>
     v === ''
         ? null
@@ -43,6 +46,7 @@ const emptyToNull = (v: Any): Any =>
               )
             : v;
 
+// Array einpacken für XML
 const wrapArr = (v: Any): Any =>
     Array.isArray(v)
         ? { item: v.map(wrapArr) }
@@ -52,6 +56,7 @@ const wrapArr = (v: Any): Any =>
             )
           : v;
 
+// Array wieder auspacken
 const unwrapArr = (v: Any): Any =>
     typeof v === 'object' &&
     v !== null &&
@@ -67,11 +72,13 @@ const unwrapArr = (v: Any): Any =>
               )
             : v;
 
+// XML-String → Basis-Objekt/Array
 export const toBase = (txt: string) => {
     if (!txt.trim()) return {};
     return unwrapArr(emptyToNull(p.parse(txt)));
 };
 
+// Basis-Objekt/Array → prettified XML-String
 export const fromBase = (obj: Any) => {
     if (!obj || (typeof obj === 'object' && !Object.keys(obj).length))
         return '';

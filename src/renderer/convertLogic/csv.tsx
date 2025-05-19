@@ -1,19 +1,28 @@
+// PapaParse: CSV einlesen/schreiben
 import Papa from 'papaparse';
 
 type V = any;
 
+// prüft auf Plain-Object
 const isObject = (val: V): val is Record<string, V> =>
     val && typeof val === 'object' && !Array.isArray(val);
 
+// prüft auf primitiven Wert
 const isPrimitive = (val: V) =>
     val === null ||
     typeof val === 'string' ||
     typeof val === 'number' ||
     typeof val === 'boolean';
 
+// array nur primitive?
 const isFlatPrimitiveArray = (arr: V): arr is V[] =>
     Array.isArray(arr) && arr.every(isPrimitive);
 
+// 👉 helper: null ↔ "null"
+const encodeVal = (v: V) => (v === null ? 'null' : (v ?? ''));
+const decodeVal = (v: V) => (v === 'null' ? null : v);
+
+// verschachtelt → {pfad: wert}
 function flattenToPaths(
     data: V,
     prefix = '',
@@ -45,6 +54,7 @@ function flattenToPaths(
     return result;
 }
 
+// pfad → wert in Objekt einsetzen
 function setDeep(root: any, path: string, value: V) {
     const keys = path
         .replace(/\[(\w+)\]/g, '.$1')
@@ -67,6 +77,7 @@ function setDeep(root: any, path: string, value: V) {
     });
 }
 
+// Basis-Objekt/Array → CSV
 export const fromBase = (baseObject: V): string => {
     if (
         baseObject == null ||
@@ -75,6 +86,7 @@ export const fromBase = (baseObject: V): string => {
         return '';
     }
 
+    // flache Tabellenstruktur (Array aus Objekten) → reine CSV-Zeilen
     if (
         Array.isArray(baseObject) &&
         baseObject.every((item) => isObject(item) && !Array.isArray(item))
@@ -87,7 +99,9 @@ export const fromBase = (baseObject: V): string => {
         const data = (baseObject as V[]).map((row) => {
             const record: Record<string, V> = {};
             fields.forEach((field) => {
-                record[field] = (row as Record<string, V>)[field] ?? '';
+                record[field] = encodeVal(
+                    (row as Record<string, V>)[field] ?? '',
+                );
             });
             return record;
         });
@@ -97,11 +111,13 @@ export const fromBase = (baseObject: V): string => {
     const flatPaths = flattenToPaths(baseObject);
     if (Object.keys(flatPaths).length === 0) return '';
 
+    // ermittele max. Länge aller Werte-Arrays
     let maxArrayLen = 0;
     Object.values(flatPaths).forEach((v) => {
         if (Array.isArray(v)) maxArrayLen = Math.max(maxArrayLen, v.length);
     });
 
+    // Spaltennamen: value / value1…N
     const valueHeaders: string[] = [];
     if (maxArrayLen === 0) {
         valueHeaders.push('value');
@@ -115,14 +131,14 @@ export const fromBase = (baseObject: V): string => {
         if (Array.isArray(val)) {
             const row: Record<string, V> = { path };
             val.forEach((v, i) => {
-                row[`value${i + 1}`] = v ?? '';
+                row[`value${i + 1}`] = encodeVal(v);
             });
             dataForPapa.push(row);
         } else {
             const key = maxArrayLen === 0 ? 'value' : 'value1';
             dataForPapa.push({
                 path,
-                [key]: val ?? '',
+                [key]: encodeVal(val),
             });
         }
     });
@@ -131,6 +147,7 @@ export const fromBase = (baseObject: V): string => {
     return Papa.unparse({ fields, data: dataForPapa });
 };
 
+// CSV → Basis-Objekt/Array
 export const toBase = (csvString: string): V => {
     if (!csvString.trim()) return {};
 
@@ -173,7 +190,7 @@ export const toBase = (csvString: string): V => {
         valueHeaders.forEach((vh) => {
             const v = row[vh];
             if (v !== undefined && v !== null && String(v).trim() !== '') {
-                values.push(v);
+                values.push(decodeVal(v));
             }
         });
 
@@ -189,6 +206,7 @@ export const toBase = (csvString: string): V => {
         setDeep(root, String(path), val);
     });
 
+    // Spezialfall: ursprüngliches Array unter "rows"
     if (Object.keys(root).length === 1 && root.hasOwnProperty('rows')) {
         if (Array.isArray(root.rows)) return root.rows;
     }
