@@ -6,6 +6,7 @@ import { Tooltip } from 'flowbite-react';
 import useConvert from '../hooks/ConvertHook';
 import { useInputs, AVAILABLE_FORMATS, Format } from '../context/InputContext';
 import FormatItem from '../components/FormatItem';
+import { useToast } from '../context/ToastContext';
 
 export default function ConvertUI() {
     const navigate = useNavigate();
@@ -19,6 +20,8 @@ export default function ConvertUI() {
         selectedFormats,
         setSelectedFormats,
     } = useInputs();
+
+    const { addToast } = useToast();
 
     const convert = useConvert();
     const isAutoConverting = useRef(false);
@@ -66,18 +69,13 @@ export default function ConvertUI() {
                             `Error converting from ${sourceFormat} to ${targetFormat}:`,
                             error,
                         );
-                        updateInput(
-                            targetFormat,
-                            'Konvertierungsfehler',
-                            false,
-                            true,
-                        );
+                        addToast('error', 'Konvertierungsfehler - leider ist die Konvertierung fehlgeschlagen ☹️');
                     }
                 });
                 isAutoConverting.current = false;
             }, 300);
         },
-        [autoConvert, inputs, selectedFormats, convert, updateInput],
+        [autoConvert, inputs, selectedFormats, convert, updateInput, addToast],
     );
 
     const handleInputChange = (
@@ -160,7 +158,7 @@ export default function ConvertUI() {
             updateInput(to, output, true);
         } catch (error) {
             console.error(`Error converting from ${from} to ${to}:`, error);
-            updateInput(to, 'Konvertierungsfehler', false);
+            addToast('error', 'Konvertierungsfehler - leider ist die Konvertierung fehlgeschlagen ☹️');
         }
     };
 

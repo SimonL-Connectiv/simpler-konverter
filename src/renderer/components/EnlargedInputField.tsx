@@ -235,6 +235,7 @@ export default function EnlargedInputField({ format, onClose }: Props) {
                                 hideActions
                                 disableSelect
                                 onEditorReady={handleChildEditorReady}
+                                enableMinimap={true}
                             />
                         </motion.div>
                     )}

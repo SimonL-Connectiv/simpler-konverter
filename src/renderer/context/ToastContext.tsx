@@ -112,10 +112,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                             transition={{ duration: 0.2 }}
                             className={`pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-white flex items-start gap-2 ${
                                 type === 'success'
-                                    ? 'bg-green-600'
+                                    ? 'bg-green-600/70'
                                     : type === 'error'
-                                      ? 'bg-red-600'
-                                      : 'bg-yellow-600'
+                                      ? 'bg-red-600/70'
+                                      : 'bg-yellow-600/70'
                             }`}
                         >
                             {getToastIcon(type)}

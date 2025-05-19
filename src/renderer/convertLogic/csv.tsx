@@ -18,11 +18,11 @@ const isPrimitive = (val: V) =>
 const isFlatPrimitiveArray = (arr: V): arr is V[] =>
     Array.isArray(arr) && arr.every(isPrimitive);
 
-// 👉 helper: null ↔ "null"
+// 👉 helper: null <-> "null"
 const encodeVal = (v: V) => (v === null ? 'null' : (v ?? ''));
 const decodeVal = (v: V) => (v === 'null' ? null : v);
 
-// verschachtelt → {pfad: wert}
+// verschachtelt -> {pfad: wert}
 function flattenToPaths(
     data: V,
     prefix = '',
@@ -54,7 +54,7 @@ function flattenToPaths(
     return result;
 }
 
-// pfad → wert in Objekt einsetzen
+// pfad -> wert in Objekt einsetzen
 function setDeep(root: any, path: string, value: V) {
     const keys = path
         .replace(/\[(\w+)\]/g, '.$1')
@@ -77,7 +77,7 @@ function setDeep(root: any, path: string, value: V) {
     });
 }
 
-// Basis-Objekt/Array → CSV
+// Basis-Objekt/Array -> CSV
 export const fromBase = (baseObject: V): string => {
     if (
         baseObject == null ||
@@ -86,7 +86,7 @@ export const fromBase = (baseObject: V): string => {
         return '';
     }
 
-    // flache Tabellenstruktur (Array aus Objekten) → reine CSV-Zeilen
+    // flache Tabellenstruktur (Array aus Objekten) -> reine CSV-Zeilen
     if (
         Array.isArray(baseObject) &&
         baseObject.every((item) => isObject(item) && !Array.isArray(item))
@@ -147,7 +147,7 @@ export const fromBase = (baseObject: V): string => {
     return Papa.unparse({ fields, data: dataForPapa });
 };
 
-// CSV → Basis-Objekt/Array
+// CSV -> Basis-Objekt/Array
 export const toBase = (csvString: string): V => {
     if (!csvString.trim()) return {};
 

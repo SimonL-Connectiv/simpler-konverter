@@ -29,6 +29,7 @@ interface Props {
     onEditorReady?: (
         editor: monaco.editor.IStandaloneCodeEditor | null,
     ) => void;
+    enableMinimap?: boolean;
 }
 
 export default function InputField({
@@ -42,6 +43,7 @@ export default function InputField({
     disableSelect,
     allowRemove = true,
     onEditorReady,
+    enableMinimap = false,
 }: Props) {
     const { inputs, updateInput } = useInputs();
     const [isEnlarged, setIsEnlarged] = useState(false);
@@ -413,12 +415,12 @@ export default function InputField({
                         onChange={handleChange}
                         editorDidMount={handleEditorDidMount}
                         options={{
-                            minimap: { enabled: true },
+                            minimap: { enabled: enableMinimap },
                             fontSize: 13,
                             lineNumbers: 'on',
                             scrollBeyondLastLine: true,
                             automaticLayout: true,
-                            wordWrap: 'on',
+                            wordWrap: 'off',
                             folding: true,
                             lineDecorationsWidth: 0,
                             lineNumbersMinChars: 3,
