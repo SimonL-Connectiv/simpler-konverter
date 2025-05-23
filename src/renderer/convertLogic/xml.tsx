@@ -3,7 +3,11 @@ import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
 type Any = any;
 
-// XML-Parser mit Attributunterstützung
+// XML-Parser-Instanz. Konfiguration:
+// - Attribute werden nicht ignoriert (Präfix '@_').
+// - Boolean-Attribute und deren Werte werden geparst.
+// - CDATA-Abschnitte werden als '#cdata' Eigenschaft behandelt.
+// - HTML-Entitäten werden nicht automatisch verarbeitet.
 const p = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -13,7 +17,12 @@ const p = new XMLParser({
     processEntities: false,
 });
 
-// XML-Builder mit Formatierung
+// XML-Builder-Instanz. Konfiguration:
+// - Attribute werden nicht ignoriert (Präfix '@_').
+// - Ausgabe wird formatiert (eingerückt mit 2 Leerzeichen).
+// - Leere Knoten werden unterdrückt.
+// - CDATA-Abschnitte werden als '#cdata' Eigenschaft behandelt.
+// - HTML-Entitäten werden nicht automatisch verarbeitet.
 const b = new XMLBuilder({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -24,7 +33,8 @@ const b = new XMLBuilder({
     processEntities: false,
 });
 
-// null -> leerer Wert
+// Konvertiert rekursiv `null` Werte zu leeren Strings (`''`).
+// Nützlich für die XML-Serialisierung, wo `null` oft als leeres Element dargestellt wird.
 const nullToEmpty = (v: Any): Any =>
     v === null
         ? ''
@@ -36,7 +46,8 @@ const nullToEmpty = (v: Any): Any =>
                 )
                 : v;
 
-// leerer Wert -> null
+// Konvertiert rekursiv leere Strings (`''`) oder leere Objekte zu `null`.
+// Kehrt `nullToEmpty` um, um die ursprüngliche Datenstruktur wiederherzustellen.
 const emptyToNull = (v: Any): Any =>
     v === '' ||
     (typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length === 0)
@@ -49,7 +60,8 @@ const emptyToNull = (v: Any): Any =>
                 )
                 : v;
 
-// Arrays für XML-Parser vorbereiten
+// Wickelt Array-Elemente rekursiv in ein `{ item: [...] }`-Objekt ein.
+// Dies hilft dem XML-Parser, Listen korrekt als eine Sequenz von `<item>`-Tags zu interpretieren.
 const wrapArr = (v: Any): Any =>
     Array.isArray(v)
         ? { item: v.map(wrapArr) }
@@ -59,10 +71,11 @@ const wrapArr = (v: Any): Any =>
             )
             : v;
 
-// "item" Array-Wrapper entfernen und root-Element behandeln
+// Entfernt rekursiv die `{ item: [...] }`-Wrapper von Arrays.
+// Behandelt auch einen Spezialfall für ein einzelnes Kind unter einem 'root'-Element.
 const unwrapArr = (v: Any): Any => {
-    // Spezialfall: Wenn es ein root-Element mit einem einzelnen Kind gibt,
-    // extrahiere direkt das Kind
+    // Spezialfall: Wenn das Objekt ein einzelnes 'root'-Element enthält,
+    // wird dessen Inhalt direkt weiterverarbeitet (entpackt).
     if (
         typeof v === 'object' &&
         v !== null &&
@@ -75,6 +88,8 @@ const unwrapArr = (v: Any): Any => {
         return unwrapArr((v as any).root);
     }
 
+    // Wenn ein Objekt nur einen 'item'-Schlüssel hat (typisch für gewrappte Arrays),
+    // wird der Inhalt von 'item' extrahiert und weiter entpackt.
     if (
         typeof v === 'object' &&
         v !== null &&
@@ -101,32 +116,36 @@ const unwrapArr = (v: Any): Any => {
     return v;
 };
 
-// XML-String -> Basis-Objekt
+// Konvertiert einen XML-String in ein JavaScript-Basisobjekt.
+// Ablauf: XML parsen -> leere Werte zu null -> Array-Wrapper entfernen.
 export const toBase = (txt: string) => {
     if (!txt.trim()) return {};
     return unwrapArr(emptyToNull(p.parse(txt)));
 };
 
-// Basis-Objekt -> XML-String
+// Konvertiert ein JavaScript-Basisobjekt in einen XML-String.
+// Ablauf: null zu leeren Werten -> Arrays wrappen -> XML bauen.
 export const fromBase = (obj: Any) => {
     if (!obj || (typeof obj === 'object' && !Object.keys(obj).length)) return '';
 
-    // XML-Deklaration behandeln
+    // Prüft, ob eine XML-Deklaration (z.B. `<?xml version="1.0"?>`) im Objekt vorhanden ist.
     const hasDecl = Object.prototype.hasOwnProperty.call(obj, '?xml');
     const decl = hasDecl ? (obj as any)['?xml'] : undefined;
 
-    // Elemente extrahieren (ohne ?xml)
+    // Extrahiert alle Elemente außer der XML-Deklaration für die weitere Verarbeitung.
     const elems: Any = {};
     Object.keys(obj).forEach((k) => k !== '?xml' && (elems[k] = nullToEmpty((obj as any)[k])));
 
-    // Arrays für XML-Parser vorbereiten
+    // Wickelt Arrays in den Elementen für den XML-Builder (siehe `wrapArr`).
     const elemsWrapped = Object.fromEntries(
         Object.entries(elems).map(([k, v]) => [k, wrapArr(v)]),
     );
 
     const keys = Object.keys(elemsWrapped);
 
-    // XML-Baum erstellen
+    // Baut den XML-String. Fügt ggf. die XML-Deklaration hinzu.
+    // Wenn es mehr als ein Top-Level-Element gibt (oder keine Deklaration und mehrere Elemente),
+    // wird ein <root>-Element um die Elemente gewickelt.
     return b.build(
         hasDecl
             ? keys.length === 1

@@ -1,12 +1,13 @@
 // Standard JSON: Text <-> Objekt
-// JSON-String -> Basis-Objekt/Array
+// Konvertiert einen JSON-String in ein JavaScript-Objekt oder -Array.
+// Wenn das Ergebnis ein Array ist, wird es in ein Objekt mit dem Schlüssel 'rows' verpackt.
 export const toBase = (txt: string) => {
     if (!txt.trim()) return {};
     const parsed = JSON.parse(txt);
     return Array.isArray(parsed) ? { rows: parsed } : parsed;
 };
 
-// Basis-Objekt/Array -> prettified JSON-String
+// Konvertiert ein JavaScript-Objekt oder -Array in einen formatierten JSON-String (mit Einrückungen).
 export const fromBase = (obj: any) => {
     if (!obj || (typeof obj === 'object' && Object.keys(obj).length === 0))
         return '';
